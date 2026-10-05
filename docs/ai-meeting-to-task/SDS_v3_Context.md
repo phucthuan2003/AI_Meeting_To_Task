@@ -116,3 +116,20 @@ Công cụ Codex hiện có không hỗ trợ đổi project của chat đang m�
 - Chưa kiểm chứng/triển khai: Side Panel, job/lease/recovery/cancel, LLM quality/cost/latency, task/evidence range/review, OAuth/Trello, UNKNOWN/reconciliation, purge/session cleanup và deployment/HTTPS. Có sourceExpiresAt nhưng chưa có purge scheduler; chưa được dùng dữ liệu thật rồi hứa xóa tự động. Rate limiter hiện trong một process; BCrypt/input limits chưa benchmark. Dockerfile đã viết, chưa build image backend hoặc kiểm chứng deployment.
 - Tài liệu chạy: `README.md`; từng bước và checks tại `docs/ai-meeting-to-task/Implementation_Progress.md`. Secrets lấy từ môi trường, `.env` bị gitignore, `.env.example` không có secret thật. Runtime dependencies/cache và log chẩn đoán nội bộ ở thư mục tạm; test report/JAR ở `backend/target/` bị gitignore.
 - Bước tiếp theo: 14.2 DB queue/analysis job, inputVersion cố định, claim/lease/recovery, polling/cancel và checkpoint. Chưa được đưa job chỉ trong RAM hoặc giả kết quả AI như COMPLETED. Sau đó 14.3 một LLM adapter/schema và dataset baseline, 14.4 review/Extension, 14.5 Trello vertical slice; 14.6–14.8 theo SDS.
+
+## Lượt chạy lại ngày 05/10/2026
+
+- Người dùng yêu cầu “chạy thử cho tôi đi”; giữ phạm vi backend hiện tại, không triển khai 14.2 trong lượt này.
+- Môi trường sandbox đã thay đổi: không còn quyền kết nối Docker socket. `docker info/ps/images` và script run local bị từ chối `operation not permitted`; chưa khởi động DB/backend hoặc chạy lại integration/HTTP. Không có công cụ cấp lại quyền socket trong lượt này.
+- Unit test đầu gặp lỗi Mockito tự attach vào JVM. Đã thêm Surefire `-javaagent` trong `backend/pom.xml`, tham chiếu `${settings.localRepository}` và `${mockito.version}` do Spring Boot quản lý. Chạy lại offline: 14 unit tests, 0 failure/error/skip; package JAR thành công. Không đổi logic nghiệp vụ. Kết quả 23 tests + HTTP ở chặng trước vẫn là kết quả lịch sử, không phải đã chạy lại trong lượt này.
+- Thêm `backend/scripts/run_local.py`, README hướng dẫn. Script chạy PostgreSQL Docker riêng → verify → HTTP smoke → giữ backend trên localhost, in URL health khi sẵn sàng, Ctrl+C dừng phiên demo/DB tạm. Secrets ngẫu nhiên trong bộ nhớ; không lấy DB/volume đang có. Syntax hai script và diff whitespace đã kiểm tra; gọi script thực tế chỉ đi tới nhánh lỗi Docker, chưa kiểm chứng toàn workflow script.
+- Lệnh tiếp tục tại terminal local trong project: `python3 backend/scripts/run_local.py`, với Docker Desktop đang mở và quyền socket của user. Cần xác minh 9 integration tests/HTTP với cấu hình Surefire mới trước khi ghi kết quả chạy lại đầy đủ.
+- Đánh giá và bước tiếp: unit/build đạt; chạy ứng dụng đang bị giới hạn quyền môi trường. Hoàn tất chạy local rồi tiếp tục chặng 14.2. Không nói backend hiện đang lắng nghe cổng 8080 khi chưa thấy health UP.
+
+## Tài liệu test API ngày 05/10/2026
+
+- Người dùng yêu cầu một docs để test APIs. Đã tạo `docs/ai-meeting-to-task/API_Test_Guide.md` (Markdown), thêm link trong README; không đổi source/backend scope.
+- Guide có 10 endpoint hiện có, hướng dẫn Postman/cURL, request/response mẫu, biến token/meetingId/version, upload TXT/DOCX, hai loại pagination cursor, source map, PATCH full replacement/stale, owner A/B, logout và bảng validation/limits/CORS/report. Ghi rõ chưa có job/LLM/task/Trello/delete/purge API.
+- Đã đối chiếu hợp đồng trực tiếp với controller/service/parser/security/error/config; tham khảo docs Postman chính thức cho scripts/variables. Checks tĩnh đạt: parse 10 JSON blocks, shell syntax 21 blocks, JavaScript syntax 6 blocks, Python fixture syntax, local links, 10 endpoint inventory, UTF-16 character/source range examples và diff whitespace.
+- Chưa gửi HTTP requests/execute Postman scripts trong lượt tạo guide; mẫu report vẫn là Chưa chạy. Kết quả runtime lịch sử giữ như các chặng trước, không ghi thành case manual đã pass.
+- Bước tiếp: chạy `python3 backend/scripts/run_local.py` trên terminal local có quyền Docker, dùng guide mục 4–6 để kiểm tra và ghi Actual/Pass/Fail/traceId, rồi tiếp tục 14.2 theo SDS.

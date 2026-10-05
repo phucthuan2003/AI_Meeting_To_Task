@@ -35,6 +35,8 @@ Backend ở `http://localhost:8080`; health ở `/actuator/health`. PostgreSQL c
 
 ## Các API đã có
 
+Hướng dẫn request/response, Postman/cURL, upload file, version conflict và owner tests: [API Test Guide](docs/ai-meeting-to-task/API_Test_Guide.md).
+
 | Method | Path | Chức năng |
 | --- | --- | --- |
 | POST | `/api/v1/auth/register` | Email, password 10–72 ký tự và tối đa 72 byte UTF-8 |

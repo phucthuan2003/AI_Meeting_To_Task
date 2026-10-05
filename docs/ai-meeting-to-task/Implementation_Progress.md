@@ -39,6 +39,8 @@ Sau mỗi bước ghi mục tiêu, thay đổi thật, checks thực sự chạy
 
 ## Bảng chặng hiện tại
 
+Kết quả chặng 14.1 dưới đây là của lượt triển khai trước. Lượt chạy lại sau đó chỉ xác nhận unit tests/build; Docker bị chặn quyền nên chưa xác nhận lại integration/HTTP.
+
 | Chặng SDS | Trạng thái |
 | --- | --- |
 | 14.1 Backend foundation | Đạt nhập/preview/auth/owner trên PostgreSQL 16.13 |
@@ -49,3 +51,23 @@ Sau mỗi bước ghi mục tiêu, thay đổi thật, checks thực sự chạy
 | 14.6 Transcript dài | Chưa triển khai |
 | 14.7 Reliability và privacy | Mới có một số checks nền; chưa hoàn tất |
 | 14.8 User evaluation/demo | Chưa triển khai |
+
+## Bước 4 Chạy lại theo yêu cầu người dùng
+
+- Mục tiêu ngày 05/10/2026: chạy thử backend hiện có, không bắt đầu chặng 14.2.
+- Checks thực sự chạy: Java 24.0.2, Docker `info/ps/images`, unit tests offline từ Maven cache, package JAR, Python syntax check và gọi `backend/scripts/run_local.py`, `git diff --check`.
+- Lỗi phát hiện/sửa: Mockito self-attach bị sandbox/JDK chặn. Thêm Surefire `-javaagent` dùng đúng Mockito version do Spring Boot quản lý và path repository Maven, nạp agent lúc khởi động test JVM. Không đổi logic nghiệp vụ.
+- Kết quả cuối: 14 unit tests đạt (5 auth, 6 parser, 1 rate limit, 2 JSON body limits), 0 failure/error/skip; package JAR đạt; syntax hai script đạt; diff whitespace sạch.
+- Blocker hiện tại: sandbox mới từ chối kết nối `/Users/phucthuan/.docker/run/docker.sock` với `operation not permitted`. Không có công cụ cấp lại quyền socket trong lượt này. Script local dừng ở Docker info trước khi tạo DB. Chưa khởi động backend, chưa chạy lại 9 integration tests hoặc HTTP smoke; kết quả 23 tests/HTTP trước đó không được ghi thành kết quả mới.
+- Hỗ trợ chạy local: thêm `backend/scripts/run_local.py`. Lệnh từ thư mục project: `python3 backend/scripts/run_local.py`. Script tạo DB Docker riêng, chạy verify/HTTP smoke rồi giữ backend ở localhost, in URL health khi sẵn sàng; Ctrl+C dừng JVM và DB demo. Không dùng/xóa volume hoặc DB đang có. Secrets sinh trong bộ nhớ, không ghi vào context.
+- Chưa kiểm chứng: toàn bộ script local qua terminal ngoài sandbox và integration/HTTP sau thay đổi cấu hình Surefire. Python syntax đã kiểm tra; hành vi thực tế hiện chỉ xác minh nhánh báo lỗi Docker.
+- Bước kế tiếp: chạy lệnh local trên máy có quyền Docker để xác minh toàn luồng; sau đó tiếp tục 14.2 theo roadmap. README đã bổ sung lệnh chạy một bước và giới hạn của backend hiện tại.
+
+## Bước 5 Tài liệu kiểm thử API
+
+- Mục tiêu ngày 05/10/2026: tạo một tài liệu dùng để test các API đã có.
+- Thay đổi: thêm `API_Test_Guide.md` trong thư mục này và link từ README; hướng dẫn 10 endpoint, setup local/Postman, cURL, request/response, lưu JWT/meetingId/version, paste/TXT/DOCX, pagination/source, stale/concurrent version, owner B và logout/revoke. Bổ sung bảng lỗi/giới hạn, CORS và mẫu ghi Actual/Pass/Fail.
+- Checks thực sự chạy: đối chiếu controller/service/parser/security/error/config; đọc tài liệu Postman chính thức cho variables/test scripts; parse 10 JSON blocks, `bash -n` cho 21 shell blocks, Node VM compile cho 6 JavaScript blocks, kiểm tra Python fixture syntax, local links, 10 endpoint trong inventory, preview/source UTF-16 counts và `git diff --check`.
+- Kết quả: checks tĩnh đạt; sửa ví dụ characterCount/range để khớp transcript mẫu. Không thay đổi source nghiệp vụ và không chạy lại tests backend cho thay đổi tài liệu.
+- Chưa kiểm chứng: gửi các request trong guide tới backend/execute scripts trong Postman. Bảng report để Chưa chạy, không biến expected results thành kết quả đo. Docker socket vẫn bị chặn ở lượt trước; không kiểm tra lại quyền trong lượt này.
+- Bước tiếp theo: người dùng chạy local, làm luồng mục 4 rồi các case mục 5 và ghi kết quả theo mục 6; báo lỗi kèm status/code/traceId. Sau khi xác minh API hiện tại, tiếp tục 14.2.
