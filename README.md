@@ -6,6 +6,14 @@ Hiện triển khai chặng 14.1: backend Spring Boot modular monolith, auth/ses
 
 ## Chạy backend local
 
+Để chạy thử bằng một lệnh trên terminal local (Docker Desktop đang mở):
+
+```sh
+python3 backend/scripts/run_local.py
+```
+
+Script tạo PostgreSQL riêng dùng dữ liệu tạm, chạy `verify`, thử luồng HTTP rồi giữ backend trên localhost (ưu tiên cổng 8080). URL health được in khi backend sẵn sàng. `Ctrl+C` dừng backend và DB của phiên demo; không dùng volume Compose hoặc DB hiện có. Secrets sinh ngẫu nhiên trong bộ nhớ; không cần tạo `.env`. Chưa có giao diện Extension nên phiên này kiểm tra API backend. Nếu Codex sandbox chặn Docker socket, chạy lệnh này trong terminal local của bạn.
+
 Cần JDK 17–25, Docker Desktop và kết nối mạng ở lần tải dependencies đầu. Maven Wrapper nằm trong `backend/`, không cần cài Maven riêng.
 
 1. Sao chép `.env.example` thành `.env`; tự đặt `DATABASE_PASSWORD` và tạo `JWT_SIGNING_KEY` bằng `openssl rand -base64 32`. Không commit `.env`.

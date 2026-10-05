@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: ai-meeting-to-task
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/ai_mtt}
+    username: ${DATABASE_USER:ai_mtt}
+    password: ${DATABASE_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+      hibernate.jdbc.batch_size: 50
+      hibernate.order_inserts: true
+  flyway:
+    enabled: true
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+server:
+  port: ${PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+app:
+  auth:
+    jwt-secret: ${JWT_SIGNING_KEY:}
+    issuer: ai-meeting-to-task
+    audience: ai-mtt-extension
+    access-token-ttl: 15m
+  cors-origins: ${EXTENSION_ORIGIN_ALLOWLIST:}
+  input:
+    max-json-bytes: 1048576
+    max-upload-bytes: 10485760
+    max-extracted-chars: 200000
+    max-zip-entry-bytes: 20971520
+    max-zip-total-bytes: 52428800
+    max-zip-entries: 1000
+    min-inflate-ratio: 0.01
+    source-retention: 30d
