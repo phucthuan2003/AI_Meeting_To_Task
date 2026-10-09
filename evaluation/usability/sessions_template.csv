@@ -1,0 +1,5 @@
+participant,order,condition,transcript_id,phase,onboarding_seconds,total_seconds,ai_wait_seconds,review_seconds,fields_edited,screen_switches,cards_correct,cards_expected,duplicate_cards,errors_note
+P01,A-first,manual,set-1,first,0,,,,,,,,,
+P01,A-first,extension,set-2,second,,,,,,,,,,
+P02,B-first,extension,set-1,first,,,,,,,,,,
+P02,B-first,manual,set-2,second,0,,,,,,,,,

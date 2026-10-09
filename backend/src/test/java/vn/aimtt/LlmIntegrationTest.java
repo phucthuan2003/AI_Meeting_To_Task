@@ -63,8 +63,10 @@ class LlmIntegrationTest {
             var fixture=start(provider);runner.runOnce();
             assertThat(jobs.get(fixture.id()).status()).isEqualTo(AnalysisJob.Status.COMPLETED);assertThat(jobs.get(fixture.id()).completedChunks()).isEqualTo(1);
             for(int i=0;i<2;i++) mvc.perform(get("/api/v1/meetings/{id}/tasks",fixture.meeting().get("meetingId").asText()).param("analysisJobId",fixture.id().toString()).header("Authorization","Bearer "+ownerToken))
-                    .andExpect(status().isOk()).andExpect(jsonPath("$.providerId").value(provider)).andExpect(jsonPath("$.result.candidates.length()").value(1))
-                    .andExpect(jsonPath("$.result.candidates[0].assigneeRaw").value("Mai")).andExpect(jsonPath("$.result.candidates[0].reviewStatus").value("PENDING_REVIEW"));
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.analysis.providerId").value(provider)).andExpect(jsonPath("$.analysis.status").value("COMPLETED"))
+                    .andExpect(jsonPath("$.tasks.length()").value(1)).andExpect(jsonPath("$.tasks[0].origin").value("AI"))
+                    .andExpect(jsonPath("$.tasks[0].assigneeRaw").value("Mai")).andExpect(jsonPath("$.tasks[0].reviewStatus").value("PENDING_REVIEW"))
+                    .andExpect(jsonPath("$.tasks[0].version").value(1)).andExpect(jsonPath("$.tasks[0].evidence[0].quote").value(LlmFixtures.TEXT));
         }
     }
     @Test void cancellationDuringHttpRequestDiscardsProviderResult() throws Exception {
@@ -75,7 +77,9 @@ class LlmIntegrationTest {
     @Test void schemaInvalidOutputNeverPublishesAndOwnersCannotReadEachOthersCandidates() throws Exception {
         owner();var fixture=start("gemini");when(transport.send(any(),any())).thenReturn(new LlmHttpTransport.Response(200,json.writeValueAsBytes(Map.of("candidates",List.of(Map.of("finishReason","STOP","content",Map.of("parts",List.of(Map.of("text","{\"events\":[{}]}")))))))));
         runner.runOnce();assertThat(jobs.get(fixture.id()).errorCode()).isEqualTo("PROVIDER_RESPONSE_INVALID");assertThat(jobs.result(fixture.id())).isEmpty();
-        mvc.perform(get("/api/v1/meetings/{id}/tasks",fixture.meeting().get("meetingId").asText()).header("Authorization","Bearer "+ownerToken)).andExpect(status().isConflict());
+        mvc.perform(get("/api/v1/meetings/{id}/tasks",fixture.meeting().get("meetingId").asText()).header("Authorization","Bearer "+ownerToken)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysis.status").value("FAILED")).andExpect(jsonPath("$.tasks").isEmpty());
+        assertThat(jdbc.queryForObject("select count(*) from tasks where analysis_job_id = ?",Integer.class,fixture.id())).isZero();
         String previous=ownerToken;owner();
         mvc.perform(get("/api/v1/meetings/{id}/tasks",fixture.meeting().get("meetingId").asText()).header("Authorization","Bearer "+ownerToken)).andExpect(status().isNotFound());
         ownerToken=previous;

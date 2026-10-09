@@ -15,8 +15,8 @@ export function extensionManifest(origin) {
   return {
     manifest_version: 3,
     name: 'AI Meeting to Task',
-    description: 'Nhập transcript và mở lại meeting đã lưu trên backend của bạn.',
-    version: '0.3.0',
+    description: 'Nhập transcript, phân tích bằng AI, review công việc rồi tạo card Trello sau khi xác nhận.',
+    version: '0.5.0',
     minimum_chrome_version: '116',
     permissions: ['storage', 'sidePanel'],
     host_permissions: [`${url.protocol}//${url.hostname}/*`],

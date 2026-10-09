@@ -12,14 +12,18 @@ import org.springframework.transaction.annotation.Transactional;
 import vn.aimtt.common.ApiException;
 import vn.aimtt.transcript.*;
 import vn.aimtt.job.AnalysisJobStore;
+import vn.aimtt.task.TaskStore;
+import vn.aimtt.sync.SyncStore;
 
 @Service
 public class MeetingService {
     public record MeetingView(UUID meetingId, long inputVersion, UUID transcriptRevision,
                               String title, LocalDate meetingDate, String timezone, String preview,
                               int characterCount, long segmentCount, List<String> warnings,
-                              String analysisStatus, Instant createdAt, Instant sourceExpiresAt, UUID currentAnalysisJobId) {}
-    public record MeetingSummary(UUID meetingId, String title, LocalDate meetingDate, long inputVersion, Instant createdAt) {}
+                              String analysisStatus, Instant createdAt, Instant sourceExpiresAt, UUID currentAnalysisJobId, UUID latestSyncJobId,
+                              boolean sourceAvailable) {}
+    public record MeetingSummary(UUID meetingId, String title, LocalDate meetingDate, long inputVersion, Instant createdAt,
+                                 String analysisStatus, int pendingTasks, int rejectedTasks) {}
     public record MeetingPage(List<MeetingSummary> items, String nextCursor) {}
     public record SegmentView(UUID segmentId, int sequence, String speaker, String timestamp,
                               String text, String sourceText, int normalizedStart, int normalizedEnd,
@@ -32,12 +36,15 @@ public class MeetingService {
     private final InputProperties limits;
     private final Clock clock;
     private final AnalysisJobStore jobs;
+    private final TaskStore tasks;
+    private final SyncStore sync;
 
     public MeetingService(MeetingRepository meetings, RevisionRepository revisions, SegmentRepository segments,
-                          InputProperties limits, Clock clock, AnalysisJobStore jobs) {
+                          InputProperties limits, Clock clock, AnalysisJobStore jobs, TaskStore tasks, SyncStore sync) {
+        this.sync = sync;
         this.meetings = meetings; this.revisions = revisions; this.segments = segments;
         this.limits = limits; this.clock = clock;
-        this.jobs = jobs;
+        this.jobs = jobs; this.tasks = tasks;
     }
 
     @Transactional
@@ -55,6 +62,7 @@ public class MeetingService {
                                LocalDate date, String timezone, ParsedTranscript input) {
         var meeting = meetings.findOwnedForUpdate(id, owner).orElseThrow(ApiException::notFound);
         if (jobs.active(id)) throw new ApiException(HttpStatus.CONFLICT, "RESOURCE_BUSY", "Input đang được phân tích. Hủy hoặc chờ job kết thúc trước khi sửa.");
+        if (sync.busy(id)) throw new ApiException(HttpStatus.CONFLICT, "RESOURCE_BUSY", "Có card đang được tạo hoặc chờ đối soát. Xử lý xong trước khi thay input.");
         if (meeting.inputVersion() != expectedVersion) {
             throw new ApiException(HttpStatus.CONFLICT, "STALE_VERSION", "Input đã thay đổi. Tải lại trước khi sửa.");
         }
@@ -90,8 +98,13 @@ public class MeetingService {
             Meeting last = selected.get(selected.size() - 1);
             next = Base64.getUrlEncoder().withoutPadding().encodeToString((last.createdAt() + "|" + last.id()).getBytes(StandardCharsets.UTF_8));
         }
-        return new MeetingPage(selected.stream().map(m -> new MeetingSummary(m.id(), m.title(), m.meetingDate(),
-                m.inputVersion(), m.createdAt())).toList(), next);
+        // Rows were selected by owner above; stats are read only for those IDs.
+        var stats = tasks.stats(selected.stream().map(Meeting::id).toList());
+        return new MeetingPage(selected.stream().map(m -> {
+            var stat = stats.getOrDefault(m.id(), new TaskStore.MeetingStats("NOT_STARTED", 0, 0));
+            return new MeetingSummary(m.id(), m.title(), m.meetingDate(), m.inputVersion(), m.createdAt(),
+                    stat.analysisStatus(), stat.pendingTasks(), stat.rejectedTasks());
+        }).toList(), next);
     }
 
     @Transactional(readOnly = true)
@@ -131,7 +144,8 @@ public class MeetingService {
         return new MeetingView(meeting.id(), meeting.inputVersion(), revision.id(), meeting.title(), meeting.meetingDate(),
                 meeting.timezone(), text.substring(0, end), text.length(), segments.countByRevisionId(revision.id()),
                 revision.warnings(), job.map(j -> j.status().name()).orElse("NOT_STARTED"), meeting.createdAt(), revision.expiresAt(),
-                job.map(j -> j.id()).orElse(null));
+                job.map(j -> j.id()).orElse(null), sync.latestJob(meeting.id()).orElse(null),
+                revision.rawContent() != null && revision.normalizedContent() != null);
     }
 
     private void validateMetadata(String title, String timezone) {

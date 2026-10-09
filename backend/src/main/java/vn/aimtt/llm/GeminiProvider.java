@@ -17,11 +17,11 @@ public class GeminiProvider implements LlmProvider {
         this.transport = transport; this.properties = properties; this.json = json;
     }
     public String id() { return "gemini"; }
-    public Output extract(AnalysisJob job, String data, JsonNode schema, BooleanSupplier keepLease) {
+    public Output extract(AnalysisJob job, String data, JsonNode schema, BooleanSupplier keepLease, String instructions) {
         if (!properties.gemini().configured()) throw new JobFailure("PROVIDER_NOT_CONFIGURED", false);
         // Use text generation compatibility; the backend remains responsible for strict schema/evidence validation.
         var payload = Map.of("contents", List.of(Map.of("role", "user", "parts",
-                List.of(Map.of("text", ExtractionPrompt.geminiText(data, schema.toString()))))),
+                List.of(Map.of("text", ExtractionPrompt.geminiText(instructions, data, schema.toString()))))),
                 "generationConfig", Map.of("maxOutputTokens", job.reservedTokens()));
         var request = HttpRequest.newBuilder(URI.create("https://generativelanguage.googleapis.com/v1beta/models/" + job.model() + ":generateContent"))
                 .timeout(properties.requestTimeout()).header("x-goog-api-key", properties.gemini().apiKey())

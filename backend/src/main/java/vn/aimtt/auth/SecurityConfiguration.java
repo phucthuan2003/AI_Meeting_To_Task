@@ -71,7 +71,7 @@ public class SecurityConfiguration {
                 .cors(cors -> cors.configurationSource(corsSource))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a
-                        .requestMatchers("/api/v1/auth/register", "/api/v1/auth/login", "/actuator/health").permitAll()
+                        .requestMatchers("/api/v1/auth/register", "/api/v1/auth/login", "/actuator/health", "/api/v1/trello/oauth/callback").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(o -> o.jwt(jwt -> {}).authenticationEntryPoint((request, response, e) -> {
                     response.setStatus(401); response.setContentType("application/json;charset=UTF-8");

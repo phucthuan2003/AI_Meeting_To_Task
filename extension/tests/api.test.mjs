@@ -103,9 +103,28 @@ test('policy/get/cancel/retry job requests use authenticated paths without extra
   assert.ok(calls.every(call => call.options.headers.Authorization === 'Bearer token' && call.options.body === undefined));
 });
 
-test('candidate read is authenticated and pinned to the job to prevent stale results after reanalysis', async () => {
-  const calls=[];const api=createApi(origin,{fetchImpl:async(url,options)=>{calls.push({url,options});return response({});}});
-  await api.tasks('token','meeting-a','job-b');
-  assert.equal(calls[0].url,`${origin}/api/v1/meetings/meeting-a/tasks?analysisJobId=job-b`);
-  assert.equal(calls[0].options.method,'GET');assert.equal(calls[0].options.headers.Authorization,'Bearer token');
+test('task review requests are authenticated, pin the job when given and never retry writes', async () => {
+  const calls = [];
+  const api = createApi(origin, { fetchImpl: async (url, options) => { calls.push({ url, options }); return response(options.method === 'DELETE' ? null : {}, options.method === 'DELETE' ? 204 : 200); } });
+  await api.tasks('token', 'meeting-a', 'job-b');
+  await api.tasks('token', 'meeting-a');
+  await api.createTask('token', 'meeting-a', { taskName: 'x' }, 'create-key-1');
+  await api.patchTask('token', 'task-1', { expectedVersion: 3, taskName: 'y' });
+  await api.rejectTask('token', 'task-1', 4);
+  await api.restoreTask('token', 'task-1', 5);
+  await api.taskEvidence('token', 'task-1');
+  assert.deepEqual(calls.map(c => [c.url.replace(origin, ''), c.options.method]), [
+    ['/api/v1/meetings/meeting-a/tasks?analysisJobId=job-b', 'GET'], ['/api/v1/meetings/meeting-a/tasks', 'GET'],
+    ['/api/v1/meetings/meeting-a/tasks', 'POST'], ['/api/v1/tasks/task-1', 'PATCH'], ['/api/v1/tasks/task-1?expectedVersion=4', 'DELETE'],
+    ['/api/v1/tasks/task-1/restore', 'POST'], ['/api/v1/tasks/task-1/evidence', 'GET'],
+  ]);
+  assert.ok(calls.every(c => c.options.headers.Authorization === 'Bearer token'));
+  assert.equal(calls[2].options.headers['Idempotency-Key'], 'create-key-1');
+  assert.deepEqual(JSON.parse(calls[3].options.body), { expectedVersion: 3, taskName: 'y' });
+  assert.deepEqual(JSON.parse(calls[5].options.body), { expectedVersion: 5 });
+});
+
+test('task conflict details survive in the error for the review screen', async () => {
+  const api = createApi(origin, { fetchImpl: async () => response({ code: 'STALE_VERSION', message: 'Task đã thay đổi', details: [{ taskId: 'task-1', currentVersion: 5 }] }, 409) });
+  await assert.rejects(api.patchTask('token', 'task-1', { expectedVersion: 4 }), error => error.code === 'STALE_VERSION' && error.details[0].currentVersion === 5);
 });

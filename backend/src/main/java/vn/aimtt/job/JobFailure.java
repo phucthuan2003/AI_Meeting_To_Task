@@ -3,9 +3,13 @@ package vn.aimtt.job;
 public final class JobFailure extends RuntimeException {
     private final String code;
     private final boolean retryable;
-    public JobFailure(String code, boolean retryable) {
-        super(code); this.code = code; this.retryable = retryable;
+    private final boolean partial;
+    public JobFailure(String code, boolean retryable) { this(code, retryable, false); }
+    /** partial: some chunks are checkpointed; the job becomes PARTIAL_FAILED and nothing is published. */
+    public JobFailure(String code, boolean retryable, boolean partial) {
+        super(code); this.code = code; this.retryable = retryable; this.partial = partial;
     }
+    public boolean partial() { return partial; }
     public String code() { return code; }
     public boolean retryable() { return retryable; }
     public static String message(String code) {
@@ -24,7 +28,8 @@ public final class JobFailure extends RuntimeException {
             case "RESULT_OVER_BUDGET" -> "Kết quả và evidence vượt giới hạn lưu. Giảm nội dung rồi tạo job mới.";
             case "LEASE_LOST" -> "Worker đã mất lease hoặc job bị hủy. Không công bố kết quả của lượt này.";
             case "SOURCE_UNAVAILABLE" -> "Nguồn transcript không còn khả dụng. Nhập lại nội dung để tạo lượt mới.";
-            case "TRANSCRIPT_OVER_BUDGET" -> "Input vượt ngân sách chuẩn bị của policy. Giảm nội dung; chunking chưa được bật.";
+            case "TRANSCRIPT_OVER_BUDGET" -> "Transcript vượt ngân sách một lần gọi AI và chunking chưa được bật (CHUNKING_ENABLED), hoặc một đoạn quá dài. Giảm nội dung hoặc bật chunking đã kiểm thử.";
+            case "CHUNK_LIMIT_EXCEEDED" -> "Transcript cần nhiều phần hơn giới hạn chunking. Chia nhỏ cuộc họp hoặc tăng giới hạn sau khi benchmark.";
             case "LEASE_RECOVERY_EXHAUSTED" -> "Worker đã hết số lần khôi phục. Có thể yêu cầu thử lại.";
             case "INTERNAL_JOB_ERROR" -> "Job gặp lỗi nội bộ. Có thể yêu cầu thử lại.";
             default -> "Phân tích không hoàn tất. Kiểm tra trạng thái job trước khi thử lại.";

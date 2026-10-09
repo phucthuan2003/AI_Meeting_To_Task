@@ -18,12 +18,7 @@ public class AnalysisJobController {
                         @NotBlank @Size(max = 64) String providerId, @NotBlank @Size(max = 64) String processingPolicyId) {}
     private final AnalysisJobService service;
     private final AnalysisPolicy policy;
-    private final AnalysisResultService results;
-    public AnalysisJobController(AnalysisJobService service, AnalysisPolicy policy, AnalysisResultService results) { this.service = service; this.policy = policy; this.results = results; }
-    @GetMapping("/meetings/{id}/tasks")
-    AnalysisResultService.View tasks(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id, @RequestParam(required = false) UUID analysisJobId) {
-        return results.get(owner(jwt), id, analysisJobId);
-    }
+    public AnalysisJobController(AnalysisJobService service, AnalysisPolicy policy) { this.service = service; this.policy = policy; }
     @GetMapping("/analysis-policies")
     List<AnalysisPolicy.View> policies() { return policy.views(); }
     @PostMapping("/meetings/{id}/analysis-jobs")

@@ -54,9 +54,10 @@ Long: Không đổi API.
 | GET | `/api/v1/jobs/{id}` | Bearer JWT | 200, progress/snapshot/error |
 | POST | `/api/v1/jobs/{id}/cancel` | Bearer JWT | 202, hủy/yêu cầu hủy |
 | POST | `/api/v1/jobs/{id}/retry` | Bearer JWT | 202 nếu lỗi retryable |
-| GET | `/api/v1/meetings/{id}/tasks` | Bearer JWT | 200 đề xuất của job COMPLETED hiện hành |
+| GET | `/api/v1/meetings/{id}/tasks` | Bearer JWT | 200 task nháp hiện hành (AI + thủ công) |
+| POST/PATCH/DELETE | `/meetings/{id}/tasks`, `/tasks/{id}`, `/tasks/{id}/restore`, `/tasks/{id}/evidence` | Bearer JWT | Review task — xem [Review Test Guide](Review_Test_Guide.md) |
 
-GET meeting nay có currentAnalysisJobId nullable và analysisStatus thực. PATCH input bị từ chối 409 RESOURCE_BUSY nếu có job active; enqueue không tăng inputVersion. Chi tiết idempotency, owner, checkpoint/recovery/cancel xem guide job. GET tasks nhận optional analysisJobId: khác job hiện hành trả 409 STALE_VIEW; chưa có kết quả COMPLETED trả 409 ANALYSIS_NOT_READY; account khác trả 404. Trả envelope jobId/meetingId/transcriptRevision/inputVersion/providerId/model/result (events, candidates, warnings, usage, latency). Lời gọi GET này không enqueue/gọi AI.
+GET meeting nay có currentAnalysisJobId nullable và analysisStatus thực. PATCH input bị từ chối 409 RESOURCE_BUSY nếu có job active; enqueue không tăng inputVersion. Chi tiết idempotency, owner, checkpoint/recovery/cancel xem guide job. GET tasks nhận optional analysisJobId: khác job hiện hành trả 409 STALE_VIEW; account khác trả 404. Từ V4 (extension 0.4.0) response là `{meetingId, inputVersion, transcriptRevision, analysis, tasks, counts}`: `analysis` null khi chưa phân tích, có `status` thật khi job chưa xong (khi đó `tasks` chỉ gồm task thủ công). Mỗi task có `version`, `origin`, `warnings` do server tính, `aiSuggestion`, `editedFields`, `evidence`. Lời gọi GET này không enqueue/gọi AI.
 
 Sau khi job COMPLETED, trong Postman dùng GET `{{baseUrl}}/api/v1/meetings/{{meetingId}}/tasks?analysisJobId={{jobId}}`, Bearer JWT hiện hành. Với các biến cURL đã thiết lập:
 
@@ -65,7 +66,7 @@ curl -sS "$API/meetings/$MEETING_ID/tasks?analysisJobId=$JOB_ID" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-`JOB_ID` lấy từ response tạo job. Các candidates hiện chỉ đọc, `reviewStatus=PENDING_REVIEW`, `needsConfirmation=true`; chưa có API PATCH/approve/Trello. Xem LLM Setup để cấu hình provider và đối chiếu nội dung/người/hạn/evidence.
+`JOB_ID` lấy từ response tạo job. Task bắt đầu `reviewStatus=PENDING_REVIEW`, `version=1`; sửa/loại bỏ/khôi phục/thêm thủ công theo [Review Test Guide](Review_Test_Guide.md). Chưa có approve-and-sync/Trello. Xem LLM Setup để cấu hình provider và đối chiếu nội dung/người/hạn/evidence.
 
 Với JSON, gửi `Content-Type: application/json`. Với multipart, để client tự đặt Content-Type/boundary; không tự gõ header `multipart/form-data`. GET/logout không cần body. Register/login/health dùng **No Auth** trong Postman và không gửi Authorization cũ; token sai vẫn có thể bị security filter từ chối ở route public.
 
@@ -570,3 +571,50 @@ Tests source ở [FoundationIntegrationTest.java](../../backend/src/test/java/vn
 Chạy toàn bộ bằng `python3 backend/scripts/run_local.py` từ terminal local có quyền Docker. Nếu đã có DB test rỗng riêng, xem README để đặt `TEST_DATABASE_*` và chạy `./mvnw verify`. Không trỏ tests vào DB chứa dữ liệu cần giữ.
 
 Nguồn hợp đồng API: [AuthController](../../backend/src/main/java/vn/aimtt/auth/AuthController.java), [MeetingController](../../backend/src/main/java/vn/aimtt/meeting/MeetingController.java), [MeetingService](../../backend/src/main/java/vn/aimtt/meeting/MeetingService.java), [TranscriptParser](../../backend/src/main/java/vn/aimtt/transcript/TranscriptParser.java), [ApiExceptionHandler](../../backend/src/main/java/vn/aimtt/common/ApiExceptionHandler.java), [application.yml](../../backend/src/main/resources/application.yml). Khi code thay đổi, cập nhật guide và expected results tương ứng.
+
+## 8 Trello, tạo card và xóa dữ liệu (14.5–14.7)
+
+Dùng Trello giả (`python3 tools/fake_trello.py --port 9999`, token demo được in ra khi khởi động) và các biến backend trong [Demo Script](Demo_Script.md), hoặc dùng Board thử nghiệm thật theo [Trello Setup](Trello_Setup.md). Ví dụ dưới đây dùng lại `API`, `TOKEN` và `MEETING_ID` (meeting đã phân tích xong).
+
+```sh
+# Kết nối bằng token (với OAuth: POST $API/trello/connections/authorize, mở authorizeUrl, rồi poll GET $API/trello/authorizations/<transactionId>)
+curl -s -X POST "$API/trello/connections/token" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"token":"TOKEN_TRELLO"}'
+CONN_ID='...'   # id trong response
+curl -s "$API/trello/connections/$CONN_ID/boards" -H "Authorization: Bearer $TOKEN"
+curl -s "$API/trello/boards/BOARD_ID/lists?connectionId=$CONN_ID" -H "Authorization: Bearer $TOKEN"
+
+# Nơi tạo card (expectedVersion 0 khi chưa có), sau đó đối chiếu người phụ trách và gợi ý hạn
+curl -s -X PUT "$API/meetings/$MEETING_ID/destination" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"connectionId\":\"$CONN_ID\",\"boardId\":\"BOARD_ID\",\"listId\":\"LIST_ID\",\"expectedVersion\":0}"
+curl -s -X POST "$API/meetings/$MEETING_ID/resolve-members" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"expectedDestinationVersion":1}'
+curl -s -X POST "$API/meetings/$MEETING_ID/resolve-deadlines" -H "Authorization: Bearer $TOKEN"
+
+# Xác nhận người phụ trách/hạn bằng PATCH task (trelloMemberId hoặc memberDecision, dueLocal hoặc deadlineDecision) rồi xem trước và tạo card
+curl -s "$API/tasks/TASK_ID/card-preview" -H "Authorization: Bearer $TOKEN"
+curl -s -X POST "$API/meetings/$MEETING_ID/approve-and-sync" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" -d '{"expectedDestinationVersion":1,"tasks":[{"taskId":"TASK_ID","expectedVersion":3}]}'
+curl -s "$API/sync-jobs/SYNC_JOB_ID" -H "Authorization: Bearer $TOKEN"
+```
+
+Kết quả mong đợi khi gọi `approve-and-sync`:
+
+- Thành công: trả về 202 với `syncJobId`.
+- Gửi lại cùng key và cùng body: nhận lại đúng job cũ.
+- Cùng key nhưng body khác: lỗi 409.
+- Task đã đổi version: 409 `STALE_VERSION`, kèm `details`.
+- Task chưa đủ điều kiện (người phụ trách chưa rõ, hạn chưa quyết định, đã tạo card…): 422 `APPROVAL_REJECTED`, kèm danh sách lý do theo từng task.
+
+Mỗi item của sync job có `status`, `cardUrl`, `errorCode`, `retryable` và `actions`. Các hành động:
+
+- **RETRY**: chỉ cho lỗi tạm thời.
+- **RECONCILE**: dành cho item UNKNOWN.
+- **LINK_CARD**: gửi body `{"card":"<link hoặc id>","acknowledgeNoMarker":false}`.
+- **RECREATE**: chỉ xuất hiện sau khi đối soát không thấy card. Body: `{"acknowledgementDuplicateRisk":true,"expectedVersion":n}`.
+
+Xóa dữ liệu:
+
+- `DELETE $API/meetings/$MEETING_ID/transcript` xóa nguồn transcript. Task và liên kết card vẫn được giữ.
+- `DELETE $API/meetings/$MEETING_ID` xóa meeting và dữ liệu liên quan.
+- Cả hai trả 204 khi thành công.
+- Trả 409 `RESOURCE_BUSY` khi job phân tích đang chạy. Riêng xóa meeting cũng trả 409 khi còn card đang tạo hoặc chờ đối soát.
+- Card đã tạo trên Trello không bị xóa.

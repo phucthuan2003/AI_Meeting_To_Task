@@ -1,6 +1,6 @@
 # Tiến độ triển khai AI Meeting to Task
 
-Cập nhật 09/10/2026, Asia/Ho_Chi_Minh. Đặc tả chuẩn: SDS v3.
+Cập nhật 10/10/2026, Asia/Ho_Chi_Minh. Đặc tả chuẩn: SDS v3.
 
 ## Bước 1 Khởi tạo nền tảng
 
@@ -45,12 +45,12 @@ Kết quả chặng 14.1 dưới đây là của lượt triển khai trước. 
 | --- | --- |
 | 14.1 Backend foundation | Đạt nhập/preview/auth/owner trên PostgreSQL 16.13 |
 | 14.2 Job và pipeline | Đã code DB queue/lease/checkpoint/cancel/recovery và chuẩn bị input; unit đạt, migration/integration/HTTP còn cần chạy local |
-| 14.3 LLM và baseline | Chưa triển khai |
-| 14.4 Review và Extension | Có auth/input/preview/source/history, chọn OpenAI/Gemini và poll/cancel job ở bản 0.2.1; chưa review/task, chưa kiểm chứng Chrome end-to-end cho bản mới |
-| 14.5 Trello vertical slice | Chưa triển khai |
-| 14.6 Transcript dài | Chưa triển khai |
-| 14.7 Reliability và privacy | Mới có một số checks nền; chưa hoàn tất |
-| 14.8 User evaluation/demo | Chưa triển khai |
+| 14.3 LLM và baseline | Người dùng xác nhận đã hoàn thiện (09/10/2026) |
+| 14.4 Review và Extension | Người dùng xác nhận đã test hoàn chỉnh (10/10/2026) |
+| 14.5 Trello vertical slice | Đã code V5 + OAuth/token + Board/List/member/deadline + snapshot/approve-and-sync + worker/UNKNOWN/đối soát + panel 0.5.0; đạt integration với Trello giả và Browser E2E; chưa thử Trello/Atlassian thật |
+| 14.6 Transcript dài | Đã code chunking + checkpoint + dedupe overlap + PARTIAL_FAILED/resume (V6), mặc định tắt; AT11–13 đạt với provider giả; chưa đánh giá trên AI thật |
+| 14.7 Reliability và privacy | AT18–30 có test tự động đạt (concurrency, key lặp, revoke, timeout, DB lỗi, worker chết, purge, injection, không fallback, log sạch) |
+| 14.8 User evaluation/demo | Có dataset seed-v1 (14 item), script chạy/chấm điểm, mẫu usability crossover, Trello giả + kịch bản demo; chưa chạy AI thật hoặc người dùng thật |
 
 ## Bước 4 Chạy lại theo yêu cầu người dùng
 
@@ -216,3 +216,120 @@ Kết quả chặng 14.1 dưới đây là của lượt triển khai trước. 
 - Snapshot: policy pin prompt riêng Gemini meeting-events-v1-gemini-text-v1; worker chặn job snapshot cũ bằng POLICY_VERSION_UNAVAILABLE thay vì đổi ngầm request. Người dùng restart backend rồi chọn Gemini/bấm Phân tích tạo job mới; extension 0.3.0 đã có polling COMPLETED → tải đề xuất nên không cần thay frontend.
 - Checks: 66 backend unit tests, 0 failure/error/skip và package JAR đạt. Có kiểm tra pinned model/token cap/credential header, pipeline thực dùng adapter với HTTP response giả, JSON/fence → candidate Mai/hạn UTC/evidence/PENDING_REVIEW; prose/trailing/duplicate keys/sai schema/ID giả/người nhận ngoài nguồn bị từ chối; snapshot Gemini cũ không dispatch. 16 Python tests đạt; probe mặc định dùng text shape mới, --isolate giữ diagnostics structured cũ. Không gọi Google thật từ agent; không chạy lại DB integration bị sandbox chặn socket hoặc extension tests khi frontend không đổi.
 - Đánh giá: hoàn tất sửa code và kiểm tra offline, chưa tuyên bố chạy thành công trên panel với Gemini thật. Bước tiếp: restart/source .env, xác minh health UP, tạo job Gemini mới với mẫu hai công việc, đợi COMPLETED và kiểm tra đề xuất/lưu sau reopen. Nếu còn lỗi, lấy safe log mới gắn job mới để phân biệt HTTP rejection với output JSON/timeout. LLM Setup mục 0 có các bước áp dụng; không bắt người dùng lặp lại diagnostics cũ trước khi test UI.
+
+## Bước 23 Review task và Side Panel theo SDS 14.4
+
+- Mục tiêu ngày 09/10/2026: người dùng xác nhận 14.3 đã xong, yêu cầu làm tiếp từ 14.4 — preview, progress, saved draft, evidence, warnings, manual task, autosave/version conflict, lịch sử, đăng nhập lại khôi phục meeting.
+- Backend: Flyway V4 `tasks` (origin AI/USER, version, review_status/sync_status tách rời, deadline_raw/due_local/due_at/timezone + resolution, member_resolution, ai_suggestion giữ giá trị AI gốc, edited_fields, create_key/hash) và `task_evidence` (segment reference, quote đọc từ segment khi hiển thị, FK SET NULL cho purge). V4 backfill task từ analysis_results COMPLETED cũ. Job COMPLETED ghi task trong cùng transaction với kết quả. Package `task`: GET list (AI của job hiện hành + USER), POST manual (Idempotency-Key), PATCH (expectedVersion, field vắng giữ/null xóa, chặn trường hệ thống 400, trelloMemberId 422 tới 14.5, DST 422), DELETE soft reject, restore, GET evidence (locator). Khóa meeting → task; compare-and-update version, 409 STALE_VERSION kèm currentVersion. Warnings do server tính theo trường, có cờ blocking; readyForApproval. History thêm analysisStatus/pending/rejected. ApiException hỗ trợ details. Bỏ AnalysisResultService (response GET tasks đổi sang list task).
+- Extension 0.4.0: ReviewPanel thay CandidateList — thẻ task với badge AI/Thủ công/Đã sửa, cảnh báo, bằng chứng + vị trí nguồn, editor (tên, mô tả, người phụ trách + Không giao người, hạn: chưa quyết định/đặt ngày giờ mặc định 17:00 + múi giờ/không đặt hạn, dùng đề xuất AI, ưu tiên, đính kèm bằng chứng), autosave debounce 800 ms một request mỗi lúc, xung đột hiển thị giá trị server và cho chọn giữ/bỏ, không tự retry. Thêm task thủ công, loại bỏ/khôi phục, chọn task, nút Tạo N card khóa kèm lý do. Xác nhận trước khi Phân tích lại; cảnh báo rời trang khi còn sửa chưa lưu.
+- Checks thực sự chạy (agent, Linux + PostgreSQL 16 thật, user thường): `mvnw verify` 103 tests đạt, 0 fail — lần đầu 26 integration cũ chạy được, cộng 8 integration review mới và 5 unit rules. Extension 55 tests đạt (esbuild 0.28 thay binary darwin chỉ cho test). Bundle main.jsx bằng esbuild đạt; render ReviewPanel trong Chromium headless 380px với API giả: sửa → lưu → cảnh báo mất, xung đột → giữ thay đổi lưu thành công, không lỗi console.
+- Chưa kiểm chứng: `npm run check` (Vite/Rollup) trên máy người dùng, Chrome thật + backend thật + AI thật, migration V4 trên DB đang có dữ liệu của người dùng (backfill đã test trên dữ liệu tạo trong test).
+- Môi trường: mạng agent chặn Maven/npm registry; dùng bản sao `~/.m2` và `extension/node_modules` của người dùng (đọc), file tạm nằm ở `Code/.local/` (gitignored).
+- Bước tiếp: người dùng chạy Review_Test_Guide R1–R17; sau đó 14.5 Trello vertical slice (OAuth, Board/List/member, resolve, snapshot, approve-and-sync).
+
+## Bước 24 Trello vertical slice theo SDS 14.5
+
+- Mục tiêu ngày 10/10/2026: người dùng xác nhận đã test xong 14.4 và yêu cầu làm 14.5–14.8 rồi test toàn bộ.
+- Backend:
+  - Flyway V5 thêm các bảng: `trello_connections` (mỗi user tối đa một kết nối ACTIVE/REAUTH), `authorization_transactions`, `meeting_destinations` (có version), `member_aliases`, `task_snapshots` (bất biến), `sync_jobs` (unique theo Idempotency-Key), `sync_items` (unique index: mỗi task chỉ một item còn hiệu lực), `sync_attempts`, `audit_events`.
+  - Kết nối Trello:
+    - Hai cách: OAuth 2.0 (state + PKCE S256, dùng một lần, hạn 10 phút, callback HTML công khai) và API key + token.
+    - Token mã hóa AES-256-GCM bằng `TOKEN_ENCRYPTION_KEY`.
+    - Refresh chạy tuần tự. Nếu refresh lỗi, kết nối chuyển REAUTH_REQUIRED.
+  - Destination:
+    - Kiểm tra List thuộc Board và cả hai đang mở.
+    - Đổi Board thì tăng version, bỏ member không còn trên Board, và bị khóa khi còn sync đang chạy.
+  - Member resolution:
+    - Không phân biệt dấu. Kết quả là alias → RESOLVED, khớp một người → SUGGESTED, khớp nhiều người → AMBIGUOUS.
+    - Không bao giờ tự giao.
+  - Deadline: gợi ý theo ngày họp, không theo ngày upload. Người dùng phải xác nhận.
+  - Approve-and-sync:
+    - Chạy trong một transaction: khóa meeting/task theo thứ tự, kiểm tra version và blocker, tạo snapshot + item, ghi audit.
+    - Cùng key + cùng body trả lại job cũ; cùng key + body khác trả 409.
+  - Worker:
+    - Dùng lease. Validate List/Board/member trước khi gửi.
+    - Commit DISPATCHED trước khi gọi tạo card.
+    - Timeout, 5xx hoặc lưu DB lỗi sau khi tạo → UNKNOWN, không bao giờ tự tạo lại.
+    - Đối soát tìm card trên Board bằng `AI_MTT_REF=<taskId>` trong mô tả card.
+  - Hành động thủ công: retry (chỉ lỗi tạm thời), reconcile, link-card, recreate (chỉ sau khi đối soát không thấy, cần xác nhận rủi ro trùng, có audit).
+  - Task FAILED được sửa hoặc loại bỏ: item cũ chuyển SUPERSEDED và task về PENDING_REVIEW.
+- Extension 0.5.0:
+  - Khối Trello: kết nối OAuth hoặc token, ngắt kết nối, chọn Board/List.
+  - Trong từng task: chọn thành viên, xác nhận gợi ý, ghi nhớ tên, dùng gợi ý hạn.
+  - Nút Tạo N card bị khóa kèm lý do. Màn hình xác nhận hiện Board › List, người được giao, ngày-giờ-múi giờ và xem trước mô tả.
+  - Khối kết quả tạo card: Đã tạo / Lỗi / Chưa rõ kết quả, có hành động tương ứng. Chỉ mở link card dạng https trello.com.
+- Checks: xem Bước 28.
+- Chưa kiểm chứng: Trello thật (token mode), OAuth Atlassian thật (scope và URL token của app thật có thể khác mặc định), giới hạn rate thật.
+
+## Bước 25 Transcript dài theo SDS 14.6
+
+- Thay đổi:
+  - `AnalysisPipeline` chạy một lần gọi khi transcript vừa ngân sách và chưa có checkpoint. Nếu không, chia phần theo ranh giới segment, có overlap 2 segment, tối đa 20 phần.
+  - Mỗi phần nhận known_tasks (giới hạn byte) và quy tắc CHUNK_RULES. Validator từ chối CREATE trùng ref đã biết.
+  - Kết quả từng phần lưu checkpoint trong `chunk_results` (V6). Event trùng ở vùng overlap được loại theo evidence.
+  - Kết quả cuối được reconcile theo thứ tự segment.
+  - Một phần lỗi → PARTIAL_FAILED, không publish task. Retry chạy tiếp từ phần lỗi.
+  - Khi `CHUNKING_ENABLED=false` (mặc định), transcript vượt ngân sách trả `TRANSCRIPT_OVER_BUDGET`.
+  - Mỗi lần gọi LLM ghi `processing_logs` (phần, token, latency, mã lỗi), không có nội dung.
+- Checks: ChunkPlanTest và ChunkingIntegrationTest (AT11 sửa ở phần sau, AT12 hủy ở phần cuối, AT13 một phần lỗi + resume, transcript ngắn vẫn một lần gọi) đều đạt với provider giả.
+- Chưa kiểm chứng: chất lượng chunking với OpenAI/Gemini thật. Theo SDS 9.7, chỉ bật trên môi trường thật sau khi chạy `vi-12-long` và các case sửa/hủy xa trên dataset.
+
+## Bước 26 Reliability và privacy theo SDS 14.7
+
+- Thay đổi:
+  - PrivacyService:
+    - Xóa transcript: 409 khi đang phân tích.
+    - Xóa meeting: 409 khi đang phân tích hoặc còn sync chưa xong. Không đụng Trello.
+    - Purge: xóa raw/normalized, segment, chunk output; scrub `analysis_results` chỉ còn usage; xóa trích dẫn trong snapshot và trong mô tả đã lưu.
+  - RetentionWorker: xóa nguồn quá hạn, cho thêm 24 giờ grace nếu còn công việc đang chạy; xóa processing_logs sau 90 ngày, session sau 7 ngày, giao dịch OAuth hết hạn.
+  - Panel có mục xóa transcript/xóa meeting kèm xác nhận.
+- Checks (đạt):
+  - ReliabilityPrivacyIntegrationTest:
+    - AT29 purge: không còn bản sao nguồn; task và liên kết card còn.
+    - Quy tắc xóa.
+    - AT28: lệnh trong transcript chỉ là dữ liệu.
+    - AT30: provider lỗi không chuyển sang provider khác.
+    - Log không chứa transcript, token hay key (OutputCapture).
+  - Các case AT18–27 trong TrelloSyncIntegrationTest.
+- Chưa kiểm chứng: purge trên DB thật có dữ liệu lâu ngày; rate limit nhiều replica.
+
+## Bước 27 User evaluation và demo theo SDS 14.8
+
+- Thay đổi:
+  - `evaluation/`:
+    - Dataset `seed-v1` gồm 14 transcript tổng hợp, chia dev/test.
+    - `run_eval.py` chạy qua backend thật bằng tài khoản riêng.
+    - `evaluate.py` tính micro/macro P/R/F1, assignee, deadline, evidence, cancellation, unsupported field, latency/token theo nhóm.
+    - Mẫu CSV usability crossover và `usability_report.py`.
+  - `tools/fake_trello.py`: Trello giả dùng stdlib, có OAuth + PKCE, trang Board/card và bơm lỗi (timeout/5xx sau tạo, reject, 429, revoke).
+  - `tools/e2e/`: build extension và kịch bản Playwright.
+  - Tài liệu: Trello_Setup, Demo_Script (3 case: thành công, trùng tên, UNKNOWN), Evaluation_Guide, Full_Test_Guide; README và API_Test_Guide mục 8.
+- Lưu ý: dataset 14 item còn dưới mức 30–50 mà SDS 14.3 đề xuất. Chưa có số đo AI thật hay usability. Không ghi chỉ số nào là kết quả đã đạt.
+
+## Bước 28 Test toàn bộ 14.5–14.8
+
+- Checks thực sự chạy (agent, Linux, JDK 21, PostgreSQL 16 thật, user thường, ngày 10/10/2026):
+  - `mvnw -o verify`: **134 tests, 0 failure/error/skip**, BUILD SUCCESS.
+    - 80 unit.
+    - 54 integration: 9 foundation, 13 jobs, 4 LLM, 8 review, 11 Trello sync, 3 chunking, 6 reliability/privacy.
+  - Extension: `node --test` **61/61 đạt**. Bundle esbuild ra manifest 0.5.0 đạt.
+  - Python: 2 test Trello giả và 6 test đánh giá đạt.
+  - **Browser E2E đạt** ("E2E PASS", không có lỗi console). Môi trường: extension thật trong Chromium + backend (E2eServer, AI theo quy tắc) + PostgreSQL + Trello giả. Kịch bản:
+    - Đăng ký, dán transcript, phân tích.
+    - OAuth (PKCE S256), Board/List.
+    - Mai SUGGESTED, Long AMBIGUOUS, gợi ý hạn Thứ Sáu 09/10/2026 17:00.
+    - Tạo 2 card: đúng member, due `2026-10-09T10:00:00Z`, có marker.
+    - Timeout sau tạo → UNKNOWN, không có nút Thử lại → đối soát → SYNCED, `createCalls`=3 (không có card trùng).
+    - Reload khôi phục trạng thái; xóa meeting thì card vẫn còn.
+- Lỗi phát hiện và đã sửa trong lúc test: refresh token rollback (chuyển markReauth ra ngoài transaction), callback HTML thiếu UTF-8, fold tiếng Việt trong DeadlineSuggester, bean LlmConfigurationTest (ObjectProvider), kiểu tổng token chunk (`::bigint`), cùng một số lỗi trong chính test.
+- Chưa kiểm chứng:
+  - Trello thật và OAuth Atlassian thật.
+  - AI thật trên dataset; usability với người dùng.
+  - `npm run check` (Vite) trên macOS.
+  - Migration V5/V6 trên DB đang dùng của người dùng.
+- Bước tiếp cho người dùng:
+  1. Khởi động lại backend (V5/V6) với `TOKEN_ENCRYPTION_KEY`.
+  2. Chạy `npm ci && npm run check`, rồi Reload extension.
+  3. Chạy Demo_Script với Trello giả, rồi Full_Test_Guide mục 2.
+  4. Thử Board Trello thật bằng token.
+  5. Chạy run_eval/evaluate với provider thật, rồi tổ chức usability crossover.

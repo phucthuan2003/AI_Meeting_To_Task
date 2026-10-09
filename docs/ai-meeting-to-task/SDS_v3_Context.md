@@ -1,6 +1,6 @@
 # Context tiếp nối dự án AI Meeting to Task
 
-Cập nhật ngày 09/10/2026, múi giờ Asia/Ho_Chi_Minh.
+Cập nhật ngày 10/10/2026, múi giờ Asia/Ho_Chi_Minh.
 
 ## Yêu cầu của người dùng
 
@@ -195,3 +195,31 @@ Bước 19: probe của người dùng trả NETWORK_OR_RESPONSE_ERROR, chưa r�
 Bước 20: người dùng xác minh metadata GET HTTP 200/generateContent=true, TLS certifi 143 CA; POST probe vẫn 400 INVALID_ARGUMENT, reason=UNSPECIFIED/fieldHints=[]. TLS script đã hoạt động ở lần thử này. Thêm probe --details để in error.message/field descriptions có che key/URL encoded/Bearer, giới hạn dòng; chỉ dùng request synthetic. 11 Python tests đạt. Chưa đổi tiếp Java/model/schema vì thiếu thông điệp lỗi cụ thể; cần vendorMessage của probe mới để xác định nguyên nhân, không suy GET thành công thành POST/schema đã hợp lệ.
 
 Bước 21: --details live chỉ cho vendorMessage=Request contains an invalid argument. Chưa có nguyên nhân cụ thể. Đã thêm --isolate --details, tối đa 6 synthetic requests: baseline text/max512 → schema nhỏ với ENUM/MIME literal/legacy → full schema → full synthetic probe; dừng sớm lỗi baseline/network/auth/quota/service, không retry hay đổi backend/.env. Đối chiếu sự khác nhau giữa ví dụ REST application/json và enum reference APPLICATION_JSON. 15 tests Python mocks đạt; đang cần output live CASE/HTTP/ACCEPTED_FORMATS/ISOLATION, chưa sửa tiếp adapter hoặc kết luận root cause.
+
+## Chặng 14.4 ngày 09/10/2026
+
+Người dùng xác nhận 14.3 hoàn tất. Đã triển khai Flyway V4 tasks/task_evidence (version, review/sync status, deadline local+UTC+timezone, ai_suggestion, edited_fields, backfill kết quả cũ), API review (list/create/patch/reject/restore/evidence) và Side Panel 0.4.0 với autosave, xung đột phiên bản, task thủ công, cảnh báo server, bằng chứng, lịch sử có trạng thái. 103 backend tests (PostgreSQL 16 thật) và 55 extension tests đạt. Chờ người dùng chạy Review_Test_Guide trên Chrome thật; tiếp theo 14.5 Trello. Chi tiết: Implementation_Progress Bước 23.
+
+## Chặng 14.5–14.8 ngày 10/10/2026
+
+Người dùng xác nhận đã test hoàn chỉnh 14.4 và yêu cầu làm 14.5–14.8 rồi test toàn bộ.
+
+Đã triển khai:
+
+- **14.5 Trello (V5):**
+  - Kết nối bằng OAuth 2.0 + PKCE hoặc API key + token. Token mã hóa AES-GCM bằng `TOKEN_ENCRYPTION_KEY`.
+  - Chọn Board/List có version. Đối chiếu người phụ trách (SUGGESTED/AMBIGUOUS, không tự giao). Gợi ý hạn theo ngày họp.
+  - Snapshot + approve-and-sync có Idempotency-Key. Worker dùng lease. UNKNOWN được đối soát bằng `AI_MTT_REF`, có retry/link-card/recreate có kiểm soát.
+  - Panel 0.5.0.
+- **14.6 Chunking (V6):** checkpoint từng phần, PARTIAL_FAILED/resume. Mặc định tắt bằng `CHUNKING_ENABLED=false`.
+- **14.7 Privacy:** retention purge, xóa transcript/meeting, processing_logs không chứa nội dung.
+- **14.8 Đánh giá và demo:** dataset seed-v1 (14 item tổng hợp), script đánh giá, mẫu usability, Trello giả, Browser E2E, Demo_Script, Full_Test_Guide, Evaluation_Guide.
+
+Kết quả kiểm thử:
+
+- 134 backend tests (PostgreSQL 16 thật), 61 extension tests và 8 Python tests đều đạt.
+- Browser E2E đạt.
+
+Chưa kiểm chứng: Trello/Atlassian thật, AI thật trên dataset, usability, Vite build trên macOS và migration trên DB của người dùng.
+
+Chi tiết: Implementation_Progress Bước 24–28.

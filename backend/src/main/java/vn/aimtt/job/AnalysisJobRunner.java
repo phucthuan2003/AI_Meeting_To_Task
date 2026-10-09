@@ -31,7 +31,7 @@ public class AnalysisJobRunner {
             var checkpoint = jobs.checkpoint(job.id());
             if (checkpoint.prepared()) {
                 if (!jobs.beginProvider(lease)) return false;
-                var result = pipeline.processPrepared(job, () -> {
+                var result = pipeline.processPrepared(job, lease, () -> {
                     var source = jobs.analysisSource(job);
                     if (source.size() != checkpoint.preparedSegments()) throw new JobFailure("SOURCE_UNAVAILABLE", false);
                     return source;
@@ -51,7 +51,9 @@ public class AnalysisJobRunner {
             boolean prepared = source.segments().size() < properties.preparationBatchSize();
             return jobs.saveCheckpoint(lease, checkpoint, source.segments(), tokens, prepared);
         } catch (JobFailure failure) {
-            jobs.fail(lease, failure.code(), failure.retryable()); return false;
+            if (failure.partial()) jobs.failPartial(lease, failure.code(), failure.retryable());
+            else jobs.fail(lease, failure.code(), failure.retryable());
+            return false;
         } catch (Exception failure) {
             // Avoid source text, SQL parameters and provider messages in logs/errors.
             log.error("Analysis worker failed jobId={} type={}", lease.jobId(), failure.getClass().getSimpleName());

@@ -36,7 +36,9 @@ class FoundationIntegrationTest {
     @Autowired JdbcTemplate jdbc;
 
     @Test void migrationAndAuthenticationLifecycle() throws Exception {
-        assertThat(jdbc.queryForObject("select count(*) from flyway_schema_history where success", Integer.class)).isEqualTo(3);
+        int migrations = new org.springframework.core.io.support.PathMatchingResourcePatternResolver().getResources("classpath:db/migration/V*.sql").length;
+        assertThat(migrations).isGreaterThanOrEqualTo(5);
+        assertThat(jdbc.queryForObject("select count(*) from flyway_schema_history where success", Integer.class)).isEqualTo(migrations);
         String email = newEmail();
         String token = registerAndLogin(email);
         mvc.perform(get("/api/v1/auth/me").header("Authorization", bearer(token))).andExpect(status().isOk()).andExpect(jsonPath("$.email").value(email));

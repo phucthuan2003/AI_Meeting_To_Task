@@ -30,13 +30,24 @@ public class ExtractionValidator {
         require(node.isArray() && node.size() <= maxItems); var values = new ArrayList<String>();
         for (var item : node) values.add(text(item, maxLength, false)); return List.copyOf(values);
     }
+    /** An event that passed schema/source/evidence checks, with server-side quotes from its segments. */
+    public record Parsed(Event event, List<Quote> quotes) {}
+
     public Result validate(AnalysisJob job, List<Source> source, LlmProvider.Output output) {
+        return reconcile(job, parse(source, output, Set.of()), output.inputTokens(), output.outputTokens(), output.latencyMs());
+    }
+
+    /**
+     * Validates one model output against the segments it was given. For chunked analysis, {@code knownRefs} are
+     * task refs created by earlier chunks: UPDATE/CANCEL may target them, a second CREATE may not.
+     */
+    public List<Parsed> parse(List<Source> source, LlmProvider.Output output, Set<String> knownRefs) {
         JsonNode root;
         try { root = json.readTree(output.json()); } catch (Exception failure) { throw invalid(); }
         keys(root, Set.of("events")); var rows = root.get("events"); require(rows.isArray() && rows.size() <= 100);
         Map<UUID, Source> byId = new HashMap<>(); Set<Integer> sequences = new HashSet<>();
         for (var segment : source) { byId.put(segment.segmentId(), segment); sequences.add(segment.sequence()); }
-        var events = new ArrayList<Event>(); var tasks = new LinkedHashMap<String, Mutable>(); var warnings = new ArrayList<String>();
+        var parsed = new ArrayList<Parsed>(); var created = new HashSet<String>();
         int previous = -1;
         for (var row : rows) {
             keys(row, EVENT_KEYS);
@@ -70,7 +81,21 @@ public class ExtractionValidator {
             require(supported.containsAll(needed));
             require(assignee == null || quotes.stream().anyMatch(q -> q.field().equals("ASSIGNEE") && q.quote().contains(assignee)));
             require(deadline == null || quotes.stream().anyMatch(q -> q.field().equals("DEADLINE") && q.quote().contains(deadline)));
-            events.add(new Event(type, ref, sequence, task, assignee, deadline, priority, changed, refs, ambiguity));
+            if (type.equals("CREATE")) require(!knownRefs.contains(ref) && created.add(ref));
+            parsed.add(new Parsed(new Event(type, ref, sequence, task, assignee, deadline, priority, changed, refs, ambiguity), List.copyOf(quotes)));
+        }
+        return List.copyOf(parsed);
+    }
+
+    /** Applies CREATE/UPDATE/CANCEL in sequence order and builds candidates (also the final check after consolidation). */
+    public Result reconcile(AnalysisJob job, List<Parsed> parsed, Long inputTokens, Long outputTokens, long latencyMs) {
+        var events = new ArrayList<Event>(); var tasks = new LinkedHashMap<String, Mutable>(); var warnings = new ArrayList<String>();
+        for (var item : parsed) {
+            var event = item.event(); var quotes = item.quotes();
+            String type = event.event_type(), ref = event.task_ref(), task = event.task_name(), assignee = event.assignee_raw(),
+                    deadline = event.deadline_raw(), priority = event.priority();
+            var changed = event.changed_fields(); var ambiguity = event.ambiguities();
+            events.add(event);
             if (type.equals("CREATE")) {
                 require(!tasks.containsKey(ref)); tasks.put(ref, new Mutable(task, assignee, deadline, priority, quotes, ambiguity));
             } else {
@@ -108,7 +133,7 @@ public class ExtractionValidator {
             candidates.add(new Candidate(UUID.randomUUID(), entry.getKey(), task.task, task.assignee, task.deadline, task.priority,
                     local, instant, job.timezone(), List.copyOf(task.evidence), List.copyOf(issues), true, "PENDING_REVIEW"));
         }
-        return new Result(List.copyOf(events), List.copyOf(candidates), List.copyOf(warnings), output.inputTokens(), output.outputTokens(), output.latencyMs());
+        return new Result(List.copyOf(events), List.copyOf(candidates), List.copyOf(warnings), inputTokens, outputTokens, latencyMs);
     }
     private static class Mutable {
         String task, assignee, deadline, priority; boolean cancelled;

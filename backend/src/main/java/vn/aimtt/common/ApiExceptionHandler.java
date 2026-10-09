@@ -25,7 +25,10 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     ResponseEntity<ApiError> domain(ApiException e, HttpServletRequest request) {
-        return error(request, e.status().value(), e.code(), e.getMessage());
+        if (e.details().isEmpty()) return error(request, e.status().value(), e.code(), e.getMessage());
+        var base = ApiError.of(request, e.status().value(), e.code(), e.getMessage());
+        return ResponseEntity.status(e.status()).body(new ApiError(base.timestamp(), base.traceId(), base.status(),
+                base.code(), base.message(), base.retryable(), e.details()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

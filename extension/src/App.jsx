@@ -24,6 +24,7 @@ export default function App() {
   const [jobActive, setJobActive] = useState(false);
   const [formKey, setFormKey] = useState(0);
   const dirty = useRef(false);
+  const reviewDirty = useRef(false);
   const epoch = useRef(0);
   const currentSession = useRef(null);
   const api = useRef(createApi(origin, { onUnauthorized: token => storage?.clearSession(token) })).current;
@@ -45,6 +46,7 @@ export default function App() {
     } finally { if (generation === epoch.current) { setBusy(false); setBooting(false); } }
   }
   function canLeave() {
+    if (reviewDirty.current) return window.confirm('Còn chỉnh sửa task chưa lưu xong. Hệ thống sẽ cố lưu nốt; nếu lưu lỗi thay đổi đó sẽ mất. Tiếp tục?');
     return !dirty.current || window.confirm('Bạn có thay đổi chưa lưu. Bỏ thay đổi và tiếp tục?');
   }
   function applyMeeting(data) {
@@ -167,13 +169,25 @@ export default function App() {
           busy={busy} onSave={save} onDirty={() => { dirty.current = true; }} onCancel={editing ? () => { if (canLeave()) { setEditing(false); dirty.current = false; } } : undefined} />}
         {view === 'history' && <History history={history} busy={busy} onRefresh={() => showHistory()} onMore={() => showHistory(history.nextCursor)} onOpen={openMeeting} />}
         {view === 'meeting' && meeting && !editing && <>
-          <AnalysisPanel key={`${meeting.meetingId}:${meeting.transcriptRevision}:${meeting.inputVersion}`} api={api} token={token} meeting={meeting} onActivity={setJobActive} disabled={busy} onReload={() => openMeeting(meeting.meetingId)} />
-          <MeetingDetail meeting={meeting} source={source} busy={busy} inputLocked={jobActive} onEdit={edit} onReload={() => openMeeting(meeting.meetingId)} onMore={() => run(async () => {
+          <AnalysisPanel key={`${meeting.meetingId}:${meeting.transcriptRevision}:${meeting.inputVersion}`} api={api} token={token} meeting={meeting} onActivity={setJobActive}
+            onReviewDirty={value => { reviewDirty.current = value; }} disabled={busy} onReload={() => openMeeting(meeting.meetingId)} />
+          <MeetingDetail meeting={meeting} source={source} busy={busy} inputLocked={jobActive} onEdit={edit} onReload={() => openMeeting(meeting.meetingId)}
+            onDeleteTranscript={() => {
+              if (!window.confirm('Xóa toàn bộ nội dung transcript và trích dẫn của meeting này? Task và liên kết card được giữ; không hoàn tác được.')) return;
+              run(() => api.deleteTranscript(token, meeting.meetingId), () => { setNotice('Đã xóa nội dung transcript.'); openMeeting(meeting.meetingId); });
+            }}
+            onDeleteMeeting={() => {
+              if (!window.confirm('Xóa meeting, transcript và task nội bộ? Card đã tạo trên Trello không bị xóa. Không hoàn tác được.')) return;
+              run(() => api.deleteMeeting(token, meeting.meetingId), async () => {
+                await storage.setActive(session.user.id, null); resetDisplay(); setNotice('Đã xóa meeting. Card trên Trello (nếu có) vẫn giữ nguyên.');
+              });
+            }}
+            onMore={() => run(async () => {
           const page = assertRevision(meeting, await api.transcript(token, meeting.meetingId, source.nextCursor));
           return { ...page, segments: [...source.segments, ...page.segments] };
         }, setSource)} /></>}
       </>}
     </>}
-    <footer>Nhập, preview & job · Bản phát triển 0.2</footer>
+    <footer>AI Meeting to Task · Bản 0.5</footer>
   </main>;
 }

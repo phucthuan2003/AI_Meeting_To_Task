@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ErrorNotice } from './components.jsx';
 import { assertJobSnapshot, isActiveJob, pollJob } from './jobs.mjs';
-import CandidateList from './CandidateList.jsx';
+import ReviewPanel from './ReviewPanel.jsx';
 
 const statusLabels = {
   QUEUED: 'Đang chờ worker', PROCESSING: 'Đang xử lý', CANCEL_REQUESTED: 'Đang yêu cầu hủy',
@@ -36,7 +36,7 @@ export function AnalysisJobStatus({ job, segmentCount }) {
   </div>;
 }
 
-export default function AnalysisPanel({ api, token, meeting, onActivity, disabled, onReload }) {
+export default function AnalysisPanel({ api, token, meeting, onActivity, onReviewDirty, disabled, onReload }) {
   const [policies, setPolicies] = useState([]);
   const [selectedProvider, setSelectedProvider] = useState('');
   const [job, setJob] = useState(null);
@@ -44,34 +44,15 @@ export default function AnalysisPanel({ api, token, meeting, onActivity, disable
   const [working, setWorking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pollNote, setPollNote] = useState('');
-  const [result, setResult] = useState(null);
-  const [resultError, setResultError] = useState(null);
-  const [resultLoading, setResultLoading] = useState(false);
-  const resultJob = useRef(null);
   const poller = useRef(null);
   const pendingStart = useRef(null);
   const mounted = useRef(false);
   const generation = useRef(0);
 
-  async function loadResult(id) {
-    const current = generation.current;
-    resultJob.current = id; setResultLoading(true); setResultError(null);
-    try {
-      const value = assertJobSnapshot(await api.tasks(token, meeting.meetingId, id), meeting);
-      if (value.jobId !== id) throw new Error('Kết quả thuộc job khác. Tải lại meeting.');
-      if (mounted.current && current === generation.current && resultJob.current === id) setResult(value);
-    } catch (failure) {
-      if (mounted.current && current === generation.current && resultJob.current === id) setResultError(failure);
-    } finally { if (mounted.current && current === generation.current && resultJob.current === id) setResultLoading(false); }
-  }
-
   function accept(result, restoreProvider = false) {
     assertJobSnapshot(result, meeting);
     if (restoreProvider || isActiveJob(result)) setSelectedProvider(['openai', 'gemini'].includes(result.providerId) ? result.providerId : '');
     setJob(result); setError(null); setPollNote(''); onActivity(isActiveJob(result));
-    if (result.status === 'COMPLETED') {
-      if (resultJob.current !== result.jobId) loadResult(result.jobId);
-    } else { resultJob.current = null; setResult(null); setResultError(null); setResultLoading(false); }
   }
   function follow(id) {
     poller.current?.stop();
@@ -90,7 +71,6 @@ export default function AnalysisPanel({ api, token, meeting, onActivity, disable
     generation.current++;
     const current = generation.current;
     pendingStart.current = null;
-    resultJob.current = null; setResult(null); setResultError(null); setResultLoading(false);
     setLoading(true); setWorking(false); setJob(null); setPolicies([]); setSelectedProvider(''); setError(null); setPollNote('');
     onActivity(Boolean(meeting.currentAnalysisJobId) || isActiveJob(meeting.analysisStatus));
     const policyLoad = api.analysisPolicies(token).then(result => {
@@ -147,10 +127,10 @@ export default function AnalysisPanel({ api, token, meeting, onActivity, disable
     {pollNote && <p className="small muted">{pollNote}</p>}
     {pendingStart.current && !working && <p className="small muted">Chưa xác định yêu cầu tạo job đã được lưu hay chưa. Bấm nút tạo/phân tích để gửi lại cùng lựa chọn, hoặc tải lại meeting để kiểm tra.</p>}
     <AnalysisJobStatus job={job} segmentCount={meeting.segmentCount} />
-    <ErrorNotice error={resultError} />
-    {resultLoading && <p className="small muted">Đang tải công việc đã lưu…</p>}
     <div className="actions">
       <button className="primary" disabled={locked || active || !policy} onClick={() => {
+        // Re-analysis publishes a new candidate set; AI drafts of the old set leave the current review (manual tasks stay).
+        if (!pendingStart.current && job?.status === 'COMPLETED' && !window.confirm('Phân tích lại sẽ tạo danh sách đề xuất AI mới. Chỉnh sửa trên các đề xuất AI hiện tại sẽ không còn hiển thị; task thủ công được giữ. Tiếp tục?')) return;
         pendingStart.current ??= { key: crypto.randomUUID(), providerId: policy.providerId, processingPolicyId: policy.processingPolicyId };
         const pending = pendingStart.current;
         const current = generation.current;
@@ -166,14 +146,13 @@ export default function AnalysisPanel({ api, token, meeting, onActivity, disable
             throw failure;
           }
         });
-      }}>{policy?.providerReady ? 'Phân tích' : 'Tạo job chuẩn bị'}</button>
+      }}>{policy?.providerReady ? (job?.status === 'COMPLETED' ? 'Phân tích lại' : 'Phân tích') : 'Tạo job chuẩn bị'}</button>
       {job && <button disabled={locked} onClick={() => follow(job.jobId)}>Làm mới trạng thái</button>}
-      {job?.status === 'COMPLETED' && resultError && <button disabled={locked || resultLoading} onClick={() => loadResult(job.jobId)}>Tải lại kết quả</button>}
       {active && job && <button disabled={locked || job.status === 'CANCEL_REQUESTED'} onClick={() => action(() => api.cancelJob(token, job.jobId))}>Hủy job</button>}
       {job?.error?.retryable && !active && <button disabled={locked} onClick={() => action(() => api.retryJob(token, job.jobId))}>Thử lại job</button>}
       {!job && error && <button disabled={locked} onClick={onReload}>Tải lại meeting</button>}
     </div>
     <p className="small muted">Job lưu ở backend và tiếp tục khi panel đóng. Input bị khóa sửa trong lúc job đang chờ, xử lý hoặc hủy.</p>
     {active && <p className="small muted">Hủy là best effort. Khi có provider thật, request đã gửi có thể vẫn được tính phí.</p>}
-  </section><CandidateList view={result} /></>;
+  </section>{!loading && <ReviewPanel api={api} token={token} meeting={meeting} job={job} onDirty={onReviewDirty} disabled={disabled} />}</>;
 }

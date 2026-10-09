@@ -2,11 +2,17 @@
 
 Chuyển transcript thành công việc được người dùng duyệt rồi tạo trên Trello. Thiết kế chuẩn ở `docs/ai-meeting-to-task/AI_Meeting_to_Task_SDS_v3.docx`.
 
-Hiện có backend foundation, DB analysis queue/lease/checkpoints và Chrome React Side Panel 0.3.0. Hai adapter OpenAI/Gemini gọi AI khi backend có key; kết quả được kiểm tra schema/evidence và lưu thành đề xuất cần duyệt. Job foundation hoặc provider chưa cấu hình vẫn báo PROVIDER_NOT_CONFIGURED. Chưa có thao tác sửa/duyệt task hoặc Trello. Mỗi chặng ghi kết quả thật tại `docs/ai-meeting-to-task/Implementation_Progress.md` và cập nhật `SDS_v3_Context.md`.
+Hiện có backend foundation, DB analysis queue/lease/checkpoints, hai adapter OpenAI/Gemini, task nháp có version (Flyway V4) và Chrome React Side Panel **0.5.0**. Chặng 14.5–14.8 bổ sung: kết nối Trello (OAuth 2.0 + PKCE hoặc API key + token, token mã hóa AES-GCM ở backend), chọn Board/List, đối chiếu người phụ trách (gợi ý/trùng tên, không tự giao), gợi ý hạn theo ngày họp, snapshot bất biến + approve-and-sync có Idempotency-Key, worker tạo card với lease, trạng thái UNKNOWN + đối soát bằng mã `AI_MTT_REF` (Flyway V5); chunking transcript dài có checkpoint từng phần, PARTIAL_FAILED và resume, retention purge, xóa transcript/meeting, processing logs không chứa nội dung (V6); Trello giả, Browser E2E, dataset đánh giá và kịch bản demo. Mỗi chặng ghi kết quả thật tại `docs/ai-meeting-to-task/Implementation_Progress.md` và cập nhật `SDS_v3_Context.md`.
 
 ## Chrome Extension
 
 [Hướng dẫn build, Load unpacked, CORS và test extension](docs/ai-meeting-to-task/Extension_Setup.md).
+
+[Hướng dẫn test màn hình review task (14.4)](docs/ai-meeting-to-task/Review_Test_Guide.md).
+
+[Cấu hình Trello (14.5)](docs/ai-meeting-to-task/Trello_Setup.md) · [Kịch bản demo với Trello giả](docs/ai-meeting-to-task/Demo_Script.md) · [Test toàn bộ 14.5–14.8](docs/ai-meeting-to-task/Full_Test_Guide.md) · [Đánh giá AI/usability](docs/ai-meeting-to-task/Evaluation_Guide.md) · [Browser E2E](tools/e2e/README.md).
+
+Biến mới: `TOKEN_ENCRYPTION_KEY` (bắt buộc để lưu kết nối Trello, 32 byte base64), `TRELLO_API_KEY` hoặc `TRELLO_CLIENT_ID/SECRET/CALLBACK_URL`, tùy chọn `CHUNKING_ENABLED` (mặc định false), `SYNC_WORKER_ENABLED`, `RETENTION_ENABLED`, `TRELLO_TIMEOUT`, `JOB_LEASE_SECONDS`.
 
 [Hướng dẫn cấu hình key và test AI thật](docs/ai-meeting-to-task/LLM_Setup.md). Khởi động lại backend để Flyway áp dụng V2/V3, build rồi Reload extension. [Job/poll/cancel/retry/restart](docs/ai-meeting-to-task/Analysis_Job_Test_Guide.md) vẫn có guide riêng. Worker mặc định bật; đặt ANALYSIS_WORKER_ENABLED=false khi cần quan sát QUEUED/cancel trong development.
 
@@ -67,7 +73,29 @@ Hướng dẫn request/response, Postman/cURL, upload file, version conflict và
 | GET | `/api/v1/jobs/{id}` | Trạng thái, tiến độ nguồn/chunks, lỗi và snapshot |
 | POST | `/api/v1/jobs/{id}/cancel` | Hủy queued/yêu cầu hủy processing |
 | POST | `/api/v1/jobs/{id}/retry` | Retry lỗi retryable, giữ snapshot/checkpoint |
-| GET | `/api/v1/meetings/{id}/tasks?analysisJobId=uuid` | Đọc đề xuất của job COMPLETED hiện hành; query guard optional |
+| GET | `/api/v1/meetings/{id}/tasks?analysisJobId=uuid` | Task nháp hiện hành: AI của job COMPLETED hiện hành + task thủ công; query guard optional |
+| POST | `/api/v1/meetings/{id}/tasks` | 201 task thủ công (origin USER); hỗ trợ Idempotency-Key |
+| PATCH | `/api/v1/tasks/{id}` | Sửa nháp theo expectedVersion; field vắng giữ nguyên, null xóa |
+| DELETE | `/api/v1/tasks/{id}?expectedVersion=n` | 204 loại bỏ mềm (REJECTED) |
+| POST | `/api/v1/tasks/{id}/restore` | Khôi phục task REJECTED về PENDING_REVIEW |
+| GET | `/api/v1/tasks/{id}/evidence` | Câu nguồn, vị trí nguồn và cảnh báo |
+| GET | `/api/v1/trello/config` | Chế độ kết nối khả dụng (OAuth/token), không trả secret |
+| GET | `/api/v1/trello/connections` | Kết nối Trello của user (trạng thái, tên thành viên) |
+| POST | `/api/v1/trello/connections/authorize` | Bắt đầu OAuth: trả authorizeUrl + transactionId (state + PKCE S256, 10 phút, dùng một lần) |
+| GET | `/api/v1/trello/authorizations/{id}` | Trạng thái giao dịch OAuth để panel polling |
+| GET | `/api/v1/trello/oauth/callback` | Callback công khai (HTML), đổi code lấy token |
+| POST | `/api/v1/trello/connections/token` | Kết nối bằng token (chế độ API key) |
+| DELETE | `/api/v1/trello/connections/{id}` | Ngắt kết nối; item chưa gửi chuyển lỗi TRELLO_DISCONNECTED |
+| GET | `/api/v1/trello/connections/{id}/boards`, `/api/v1/trello/boards/{boardId}/lists\|members?connectionId=` | Duyệt Board/List/thành viên |
+| GET/PUT | `/api/v1/meetings/{id}/destination` | Nơi tạo card theo version; bị khóa khi còn card đang tạo |
+| POST | `/api/v1/meetings/{id}/resolve-members` | Đối chiếu người phụ trách: RESOLVED (alias)/SUGGESTED/AMBIGUOUS/MISSING |
+| POST | `/api/v1/meetings/{id}/resolve-deadlines` | Gợi ý hạn từ ngày họp (chỉ gợi ý, người dùng xác nhận) |
+| GET | `/api/v1/tasks/{id}/card-preview` | Payload card sẽ tạo |
+| POST | `/api/v1/meetings/{id}/approve-and-sync` | Duyệt + snapshot + sync job (bắt buộc Idempotency-Key, tối đa 50 task) |
+| GET | `/api/v1/sync-jobs/{id}`, `/api/v1/meetings/{id}/sync-jobs/latest` | Kết quả từng item, hành động cho phép |
+| POST | `/api/v1/sync-items/{id}/retry` \| `reconcile` \| `link-card` \| `recreate` | Thử lại lỗi tạm thời; đối soát UNKNOWN; gắn card có sẵn; tạo lại chỉ sau khi đối soát không thấy |
+| DELETE | `/api/v1/meetings/{id}/transcript` | Xóa nguồn transcript ngay (giữ task và liên kết card) |
+| DELETE | `/api/v1/meetings/{id}` | Xóa meeting và dữ liệu liên quan; không xóa card trên Trello |
 
 API ngoài register/login/health yêu cầu `Authorization: Bearer <accessToken>`. JWT hệ thống không có refresh token trong MVP. Logout hoặc hết hạn yêu cầu đăng nhập lại; draft đã lưu ở DB vẫn còn. Truy cập meeting của user khác trả 404.
 
@@ -101,7 +129,7 @@ cd backend
 
 Unit tests kiểm tra parser/normalization/source map và rate limit. Integration tests khởi động PostgreSQL 16.13 tạm qua Zonky để chạy Flyway, schema validation, API/auth/owner/concurrency; không dùng H2. DB tạm dừng khi test JVM thoát. macOS arm64 có dependency binary tương ứng; Windows/Intel/Linux amd64 dùng binary mặc định. Chạy với user thường, không chạy embedded PostgreSQL bằng root.
 
-Suite hiện có 66 unit tests và 26 integration tests (9 foundation, 13 jobs, 4 LLM). Unit/package đạt; thử integration suite bị sandbox chặn mở socket PostgreSQL trước assertions nên chưa xác minh V2/V3/JDBC/concurrency/recovery. Extension 0.3.0 có chọn provider, tiến độ và đề xuất/evidence; 40 tests/build MV3 đạt với fixtures và React server-render. Chưa gọi API AI thật hoặc test Chrome mới. HTTP smoke ép key trống, kiểm tra preparation/enqueue/cancel/restart JVM; mới kiểm tra syntax.
+Suite hiện có 134 tests: 80 unit và 54 integration (9 foundation, 13 jobs, 4 LLM, 8 review task, 11 Trello sync, 3 chunking, 6 reliability/privacy). Ngày 10/10/2026 toàn bộ 134 đạt trên PostgreSQL 16 thật (Linux, user thường); integration Trello dùng HTTP Trello giả trong JVM. Extension 0.5.0 có 61 tests đạt; `npm run check` (Vite build + MV3 checks) cần chạy lại trên máy local. Browser E2E (extension thật trong Chromium + backend + PostgreSQL + Trello giả, AI theo quy tắc) đạt. Chưa thử Trello thật, OAuth Atlassian thật hoặc AI thật trên dataset; xem [Full Test Guide](docs/ai-meeting-to-task/Full_Test_Guide.md).
 
 Nếu sandbox không cho phép PostgreSQL dùng shared memory, chạy tests với một DB PostgreSQL rỗng riêng (không trỏ DB chứa dữ liệu thật). Tests tự tạo account/meeting và giữ fixtures trong DB đó:
 
@@ -127,8 +155,8 @@ Script khởi động JAR ở cổng 18080, dùng JWT key tạm sinh ngẫu nhi�
 
 ## Cấu trúc và phần tiếp theo
 
-`backend/src/main/java/vn/aimtt/` có module `auth`, `meeting`, `transcript`, `job`, `llm`, `common`. Flyway quản lý schema, JPA chỉ validate; JDBC dùng transaction ngắn để claim/lease/checkpoint/publish. Adapters/schema validation/candidate persistence đã có; còn kiểm chứng API thật, baseline chất lượng dev/held-out và ngân sách model thực để hoàn tất 14.3. Chunking, sửa/duyệt task và Trello chưa có.
+`backend/src/main/java/vn/aimtt/` có module `auth`, `meeting`, `transcript`, `job`, `llm`, `task`, `trello`, `sync`, `privacy`, `common`. Flyway quản lý schema, JPA chỉ validate; JDBC dùng transaction ngắn để claim/lease/checkpoint/publish. Tool hỗ trợ: `tools/fake_trello.py` (Trello giả + bơm lỗi), `tools/e2e/`, `evaluation/` (dataset tổng hợp, chạy và chấm điểm).
 
-Chưa có purge scheduler; `sourceExpiresAt` hiện là deadline đã lưu, chưa chứng minh nguồn tự bị xóa sau 30 ngày. Rate limit đang giữ trong một process, cần enforcement dùng chung khi scale. Chưa benchmark password cost/input limits, chưa triển khai cleanup session/revision. Đây là backend phát triển; chưa đủ điều kiện production/demo Trello thật.
+Retention worker xóa nguồn sau hạn (`sourceExpiresAt`, giữ thêm 24 giờ khi job/sync còn chạy), log xử lý sau 90 ngày, session hết hạn sau 7 ngày. Rate limit vẫn giữ trong một process. Chunking mặc định tắt; chỉ bật khi đã đánh giá trên dataset. Chưa đủ điều kiện production: cần HTTPS, khóa bí mật quản lý tập trung và đánh giá AI thật trước demo ghi Trello thật.
 
 Phiên bản được khóa theo SDS: [Spring Boot 3.5 system requirements](https://docs.spring.io/spring-boot/3.5/system-requirements.html), [Apache POI parser protections](https://poi.apache.org/components/configuration.html), [Zonky embedded PostgreSQL](https://github.com/zonkyio/embedded-postgres).

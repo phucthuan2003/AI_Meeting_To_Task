@@ -83,7 +83,7 @@ export function InputForm({ initial, version, busy, onSave, onDirty, onCancel })
   </section>;
 }
 
-export function MeetingDetail({ meeting, source, busy, inputLocked, onMore, onReload, onEdit }) {
+export function MeetingDetail({ meeting, source, busy, inputLocked, onMore, onReload, onEdit, onDeleteTranscript, onDeleteMeeting }) {
   return <>
     <section className="card">
       <p className="eyebrow">ĐÃ LƯU · VERSION {meeting.inputVersion}</p>
@@ -109,9 +109,19 @@ export function MeetingDetail({ meeting, source, busy, inputLocked, onMore, onRe
         {source.nextCursor !== null && <button className="full" disabled={busy} onClick={onMore}>Xem thêm nội dung</button>}
       </>}
     </section>
-    <p className="notice">Chọn AI đã cấu hình để phân tích transcript. Đề xuất công việc cần được kiểm tra; duyệt/sửa task và kết nối Trello sẽ được bổ sung sau.</p>
+    {(onDeleteTranscript || onDeleteMeeting) && <section className="card privacy">
+      <p className="eyebrow">DỮ LIỆU</p>
+      <p className="small muted">Nội dung nguồn tự xóa sau {new Date(meeting.sourceExpiresAt).toLocaleDateString('vi-VN')}. Task đã duyệt và liên kết card được giữ để không tạo trùng; xóa trong hệ thống không xóa card trên Trello.</p>
+      <div className="actions">
+        {onDeleteTranscript && meeting.sourceAvailable !== false && <button className="danger-button" disabled={busy} onClick={onDeleteTranscript}>Xóa nội dung transcript</button>}
+        {onDeleteMeeting && <button className="danger-button" disabled={busy} onClick={onDeleteMeeting}>Xóa meeting</button>}
+      </div>
+    </section>}
   </>;
 }
+
+const historyStatus = { NOT_STARTED: 'Chưa phân tích', QUEUED: 'Đang chờ phân tích', PROCESSING: 'Đang phân tích', CANCEL_REQUESTED: 'Đang hủy',
+  COMPLETED: 'Đã phân tích', PARTIAL_FAILED: 'Phân tích chưa đủ', FAILED: 'Phân tích lỗi', CANCELLED: 'Đã hủy phân tích' };
 
 export function History({ history, busy, onRefresh, onMore, onOpen }) {
   return <section className="card">
@@ -121,6 +131,8 @@ export function History({ history, busy, onRefresh, onMore, onOpen }) {
       {history.items.map(item => <button className="history-item full" disabled={busy} key={item.meetingId} onClick={() => onOpen(item.meetingId)}>
         <strong>{item.title || 'Cuộc họp chưa đặt tên'}</strong>
         <span className="small muted">{item.meetingDate || 'Chưa có ngày họp'} · v{item.inputVersion}</span>
+        {item.analysisStatus && <span className="small">{historyStatus[item.analysisStatus] ?? item.analysisStatus}
+          {item.pendingTasks > 0 && ` · ${item.pendingTasks} task chờ duyệt`}{item.rejectedTasks > 0 && ` · ${item.rejectedTasks} đã loại`}</span>}
         <span className="small muted">Lưu {new Date(item.createdAt).toLocaleString('vi-VN')}</span>
       </button>)}
       {history.nextCursor !== null && <button className="full" disabled={busy} onClick={onMore}>Xem thêm cuộc họp</button>}

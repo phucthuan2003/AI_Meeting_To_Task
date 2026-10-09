@@ -10,12 +10,14 @@ import org.springframework.transaction.annotation.Transactional;
 import vn.aimtt.common.ApiException;
 import vn.aimtt.job.AnalysisJob.*;
 import vn.aimtt.llm.Extraction;
+import vn.aimtt.task.TaskStore;
 
 @Repository
 public class AnalysisJobStore {
     private final JdbcTemplate jdbc;
     private final AnalysisProperties properties;
-    public AnalysisJobStore(JdbcTemplate jdbc, AnalysisProperties properties) { this.jdbc = jdbc; this.properties = properties; }
+    private final TaskStore tasks;
+    public AnalysisJobStore(JdbcTemplate jdbc, AnalysisProperties properties, TaskStore tasks) { this.jdbc = jdbc; this.properties = properties; this.tasks = tasks; }
     public record MeetingSnapshot(UUID id, UUID revisionId, long inputVersion, String title,
                                   LocalDate meetingDate, String timezone, boolean sourceAvailable) {}
     private static Instant instant(ResultSet rs, String name) throws SQLException {
@@ -155,7 +157,9 @@ public class AnalysisJobStore {
                 insert into analysis_results(job_id, result_json, input_tokens, output_tokens, latency_ms, created_at)
                 values (?, ?::jsonb, ?, ?, ?, ?)
                 """, job.id(), result, metrics.inputTokens(), metrics.outputTokens(), metrics.latencyMs(), Timestamp.from(now));
-        jdbc.update("update analysis_jobs set completed_chunks = 1, total_chunks = 1 where id = ?", job.id());
+        // Review drafts are published in the same transaction as COMPLETED; a cancelled/lost lease publishes neither.
+        tasks.insertCandidates(job, metrics.candidates(), now);
+        jdbc.update("update analysis_jobs set total_chunks = coalesce(total_chunks, 1), completed_chunks = coalesce(total_chunks, 1) where id = ?", job.id());
         finishLocked(job, Status.COMPLETED, null, false, now); return true;
     }
     private boolean usableLocked(AnalysisJob job, Lease lease, Instant now) {
@@ -217,5 +221,58 @@ public class AnalysisJobStore {
                 """, Timestamp.from(now), Timestamp.from(now), job.attemptCount() + properties.maxAttempts(), job.id());
         jdbc.update("update meetings set current_analysis_job_id = ? where id = ?", job.id(), job.meetingId());
         return get(job.id());
+    }
+    // ---------- chunk checkpoints (SDS §5.6, §7.5) ----------
+    public record ChunkRow(int index, int firstSequence, int lastSequence, int overlapUntil, String status, String outputJson, int attempts) {}
+    public List<ChunkRow> chunks(UUID jobId) {
+        return jdbc.query("select chunk_index, first_sequence, last_sequence, overlap_until, status, output_json::text as output, attempts from chunk_results where job_id = ? order by chunk_index",
+                (r, n) -> new ChunkRow(r.getInt(1), r.getInt(2), r.getInt(3), r.getInt(4), r.getString(5), r.getString(6), r.getInt(7)), jobId);
+    }
+    /** Persists the chunk plan once; a resumed or retried job keeps the same boundaries. */
+    @Transactional
+    public boolean savePlan(Lease lease, List<ChunkRow> plan) {
+        var job = locked(lease.jobId()); Instant now = now();
+        if (!usableLocked(job, lease, now)) return false;
+        if (!chunks(job.id()).isEmpty()) return true;
+        for (var chunk : plan) jdbc.update("""
+                insert into chunk_results(job_id, chunk_index, first_sequence, last_sequence, overlap_until, status, updated_at) values (?, ?, ?, ?, ?, 'PENDING', ?)""",
+                job.id(), chunk.index(), chunk.firstSequence(), chunk.lastSequence(), chunk.overlapUntil(), Timestamp.from(now));
+        jdbc.update("update analysis_jobs set total_chunks = ?, completed_chunks = 0, stage = 'CALLING_LLM', updated_at = ? where id = ?", plan.size(), Timestamp.from(now), job.id());
+        return true;
+    }
+    @Transactional
+    public boolean saveChunk(Lease lease, int index, String parsedJson, Long inputTokens, Long outputTokens, long latencyMs) {
+        var job = locked(lease.jobId()); Instant now = now();
+        if (!usableLocked(job, lease, now)) return false;
+        jdbc.update("""
+                update chunk_results set status = 'COMPLETED', output_json = ?::jsonb, attempts = attempts + 1, input_tokens = ?, output_tokens = ?, latency_ms = ?,
+                error_code = null, updated_at = ? where job_id = ? and chunk_index = ?""", parsedJson, inputTokens, outputTokens, latencyMs, Timestamp.from(now), job.id(), index);
+        jdbc.update("""
+                update analysis_jobs set completed_chunks = (select count(*) from chunk_results where job_id = ? and status = 'COMPLETED'),
+                lease_expires_at = ?, updated_at = ? where id = ?""", job.id(), Timestamp.from(now.plus(properties.leaseDuration())), Timestamp.from(now), job.id());
+        return true;
+    }
+    public Long[] chunkUsage(UUID jobId) {
+        return jdbc.queryForObject("""
+                select case when bool_and(input_tokens is not null) then sum(input_tokens)::bigint end, case when bool_and(output_tokens is not null) then sum(output_tokens)::bigint end,
+                coalesce(sum(latency_ms), 0)::bigint from chunk_results where job_id = ? and status = 'COMPLETED'""",
+                (r, n) -> new Long[] {r.getObject(1, Long.class), r.getObject(2, Long.class), r.getObject(3, Long.class)}, jobId);
+    }
+    public void chunkFailed(UUID jobId, int index, String code) {
+        jdbc.update("update chunk_results set status = 'FAILED', attempts = attempts + 1, error_code = ?, updated_at = now() where job_id = ? and chunk_index = ?", code, jobId, index);
+    }
+    /** At least one part is done but another failed: keep checkpoints, publish nothing, allow retry of the rest. */
+    @Transactional
+    public boolean failPartial(Lease lease, String code, boolean retryable) {
+        var job = locked(lease.jobId()); Instant now = now();
+        if (!usableLocked(job, lease, now)) return false;
+        finishLocked(job, Status.PARTIAL_FAILED, code, retryable, now); return true;
+    }
+    /** SDS §7.9: usage/outcome only — never prompts, transcript or credentials. */
+    public void log(AnalysisJob job, int chunk, Long inputTokens, Long outputTokens, Long latencyMs, String status, String code) {
+        jdbc.update("""
+                insert into processing_logs(id, job_id, chunk_index, provider, model, prompt_version, schema_version, input_tokens, output_tokens, latency_ms,
+                attempt, status, error_code, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())""", UUID.randomUUID(), job.id(), chunk,
+                job.providerId(), job.model(), job.promptVersion(), job.schemaVersion(), inputTokens, outputTokens, latencyMs, job.attemptCount(), status, code);
     }
 }

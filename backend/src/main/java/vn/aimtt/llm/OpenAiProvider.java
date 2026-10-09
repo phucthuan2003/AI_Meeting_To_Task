@@ -17,10 +17,10 @@ public class OpenAiProvider implements LlmProvider {
         this.transport = transport; this.properties = properties; this.json = json;
     }
     public String id() { return "openai"; }
-    public Output extract(AnalysisJob job, String data, JsonNode schema, BooleanSupplier keepLease) {
+    public Output extract(AnalysisJob job, String data, JsonNode schema, BooleanSupplier keepLease, String instructions) {
         if (!properties.openai().configured()) throw new JobFailure("PROVIDER_NOT_CONFIGURED", false);
         var payload = Map.of("model", job.model(), "store", false, "max_output_tokens", job.reservedTokens(),
-                "input", List.of(Map.of("role", "system", "content", ExtractionPrompt.SYSTEM), Map.of("role", "user", "content", data)),
+                "input", List.of(Map.of("role", "system", "content", instructions), Map.of("role", "user", "content", data)),
                 "text", Map.of("format", Map.of("type", "json_schema", "name", "meeting_events", "strict", true, "schema", schema)));
         var request = HttpRequest.newBuilder(URI.create("https://api.openai.com/v1/responses"))
                 .timeout(properties.requestTimeout()).header("Authorization", "Bearer " + properties.openai().apiKey())

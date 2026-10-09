@@ -45,3 +45,41 @@ nav { display: flex; flex-wrap: wrap; gap: 7px; margin: 14px 0; } nav button { f
 footer { text-align: center; margin-top: 24px; color: var(--muted); font-size: 11px; }
 .candidate { border-top: 1px solid var(--line); padding: 14px 0; overflow-wrap: anywhere; }
 @media (max-width: 350px) { main { padding: 14px 10px; } .card { padding: 14px; } .columns { grid-template-columns: 1fr; gap: 0; } }
+.review h3 { margin: 0; }
+.task-card { border-top: 1px solid var(--line); padding: 14px 0; overflow-wrap: anywhere; }
+.task-card.is-rejected { opacity: .75; }
+.task-head { display: flex; gap: 10px; align-items: flex-start; } .task-head h3 { margin: 0 0 8px; }
+.task-head input[type=checkbox] { width: 18px; height: 18px; margin-top: 2px; flex: none; accent-color: var(--accent); }
+.task-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.badge { font-size: 11px; font-weight: 650; border-radius: 999px; padding: 2px 9px; background: var(--soft); color: #285b53; }
+.badge.user { background: #eef0fb; color: #3a4a8c; } .badge.edited { background: #fff5dc; color: #7a5a00; }
+.badge.rejected { background: #f3f3f3; color: var(--muted); }
+.badge.save.saving, .badge.save.dirty { background: #eef3f2; color: var(--muted); }
+.badge.save.error, .badge.save.conflict { background: #fff0ee; color: #8b2435; }
+.warnings { margin: 6px 0 8px; padding-left: 18px; font-size: 12px; color: #7a5a00; } .warnings li.blocking { color: #8b2435; }
+.evidence { margin: 8px 0; font-size: 13px; } .evidence summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 12px; }
+.task-editor { margin-top: 12px; padding: 12px; background: var(--background); border-radius: 9px; }
+.field-group { border-top: 1px dashed var(--line); padding-top: 10px; margin-bottom: 12px; }
+.group-title { font-weight: 650; font-size: 13px; margin-bottom: 6px; }
+.choices { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+label.choice { display: flex; gap: 8px; align-items: flex-start; font-weight: normal; margin-bottom: 6px; }
+label.choice input { display: inline-block; width: auto; margin: 3px 0 0; flex: none; accent-color: var(--accent); }
+.rejected { margin-top: 14px; } .rejected summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 600; }
+.manual { margin-top: 12px; background: var(--background); }
+.create-bar { position: sticky; bottom: 0; margin: 16px -18px -18px; padding: 12px 18px; background: #fff; border-top: 1px solid var(--line); box-shadow: 0 -6px 14px rgba(32,55,49,.07); border-radius: 0 0 12px 12px; }
+.create-bar ul { margin: 8px 0 0; padding-left: 18px; }
+@media (max-width: 350px) { .create-bar { margin: 12px -14px -14px; padding: 10px 14px; } }
+.trello .actions { margin-top: 8px; }
+.trello-connection, .destination { margin-bottom: 10px; }
+.token-form { margin-top: 12px; padding: 12px; background: var(--background); border-radius: 9px; }
+.badge.sync.queued, .badge.sync.syncing { background: #eef0fb; color: #3a4a8c; }
+.badge.sync.synced { background: var(--soft); color: #1f5b51; }
+.badge.sync.failed, .badge.sync.unknown { background: #fff0ee; color: #8b2435; }
+.confirm-create { position: sticky; bottom: 0; margin: 16px -18px -18px; padding: 16px 18px; background: #fff; border-top: 2px solid var(--accent); box-shadow: 0 -8px 18px rgba(32,55,49,.1); border-radius: 0 0 12px 12px; max-height: 70vh; overflow: auto; }
+.confirm-list { padding-left: 20px; margin: 8px 0 12px; } .confirm-list li { margin-bottom: 10px; overflow-wrap: anywhere; }
+.sync-item { border-top: 1px solid var(--line); padding: 12px 0; } .sync-item .row { align-items: flex-start; gap: 8px; }
+.unknown-group { border: 1px solid #f1cbc7; border-radius: 9px; padding: 0 10px; margin: 10px 0; }
+a.button-link { display: inline-block; border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; color: var(--accent); text-decoration: none; font-size: 13px; }
+a.button-link:hover { border-color: var(--accent); background: #edf4f2; }
+button.danger-button { color: #8b2435; border-color: #f1cbc7; }
+.link-card { margin-top: 10px; padding: 10px; background: var(--background); border-radius: 9px; }

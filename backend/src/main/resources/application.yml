@@ -46,6 +46,18 @@ app:
     request-timeout: 60s
     max-input-bytes: 49152
     max-output-tokens: 4096
+  chunking:
+    enabled: ${CHUNKING_ENABLED:false}
+    input-bytes: ${CHUNK_INPUT_BYTES:24000}
+    overlap-segments: 2
+    max-chunks: 20
+    known-tasks-bytes: 4096
+  retention:
+    enabled: ${RETENTION_ENABLED:true}
+    poll-delay-ms: 600000
+    grace: 24h
+    log-retention: ${LOG_RETENTION_DAYS:90}d
+    session-retention: 7d
   analysis:
     worker-enabled: ${ANALYSIS_WORKER_ENABLED:true}
     poll-delay-ms: 1000
@@ -56,6 +68,31 @@ app:
     preparation-batch-size: 100
     context-tokens: 131072
     reserved-tokens: 8192
+  trello:
+    client-id: ${TRELLO_CLIENT_ID:}
+    client-secret: ${TRELLO_CLIENT_SECRET:}
+    callback-url: ${TRELLO_CALLBACK_URL:}
+    scopes: ${TRELLO_SCOPES:read:member:trello read:board:trello write:board:trello offline_access}
+    authorize-url: ${TRELLO_AUTHORIZE_URL:https://auth.atlassian.com/authorize}
+    token-url: ${TRELLO_TOKEN_URL:https://auth.atlassian.com/oauth/token}
+    api-base-url: ${TRELLO_API_BASE_URL:https://api.trello.com/1}
+    api-key: ${TRELLO_API_KEY:}
+    app-name: AI Meeting to Task
+    token-encryption-key: ${TOKEN_ENCRYPTION_KEY:}
+    key-version: ${TOKEN_KEY_VERSION:1}
+    request-timeout: ${TRELLO_TIMEOUT:20s}
+    transaction-ttl: 10m
+    allow-local-http: ${TRELLO_ALLOW_LOCAL_HTTP:false}
+    card-url-hosts: trello.com
+  sync:
+    worker-enabled: ${SYNC_WORKER_ENABLED:true}
+    poll-delay-ms: 1000
+    lease-duration: ${JOB_LEASE_SECONDS:60}s
+    max-transient-attempts: 4
+    retry-base-delay: 2s
+    reconcile-delay: 30s
+    max-auto-reconcile: 3
+    reconcile-pages: 5
   auth:
     jwt-secret: ${JWT_SIGNING_KEY:}
     issuer: ai-meeting-to-task
