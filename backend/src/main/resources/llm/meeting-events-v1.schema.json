@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["events"],
+  "properties": {
+    "events": {
+      "type": "array", "maxItems": 100,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["event_type", "task_ref", "sequence", "task_name", "assignee_raw", "deadline_raw", "priority", "changed_fields", "evidence_refs", "ambiguities"],
+        "properties": {
+          "event_type": {"type": "string", "enum": ["CREATE", "UPDATE", "CANCEL"]},
+          "task_ref": {"type": "string", "maxLength": 80},
+          "sequence": {"type": "integer", "minimum": 0},
+          "task_name": {"type": ["string", "null"], "maxLength": 255},
+          "assignee_raw": {"type": ["string", "null"], "maxLength": 255},
+          "deadline_raw": {"type": ["string", "null"], "maxLength": 255},
+          "priority": {"type": ["string", "null"], "enum": ["LOW", "MEDIUM", "HIGH", null]},
+          "changed_fields": {"type": "array", "maxItems": 4, "items": {"type": "string", "enum": ["TASK", "ASSIGNEE", "DEADLINE", "PRIORITY"]}},
+          "evidence_refs": {"type": "array", "minItems": 1, "maxItems": 12, "items": {
+            "type": "object", "additionalProperties": false, "required": ["segment_id", "field"],
+            "properties": {"segment_id": {"type": "string"}, "field": {"type": "string", "enum": ["TASK", "ASSIGNEE", "DEADLINE", "PRIORITY"]}}
+          }},
+          "ambiguities": {"type": "array", "maxItems": 10, "items": {"type": "string", "maxLength": 255}}
+        }
+      }
+    }
+  }
+}

@@ -2,9 +2,7 @@ package vn.aimtt;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
@@ -28,22 +26,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 class FoundationIntegrationTest {
-    private static final EmbeddedPostgres POSTGRES = System.getenv("TEST_DATABASE_URL") == null ? startPostgres() : null;
-    private static EmbeddedPostgres startPostgres() {
-        try {
-            var pg = EmbeddedPostgres.builder().setPort(0).setLocaleConfig("locale", "C").start();
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> { try { pg.close(); } catch (IOException ignored) {} }));
-            return pg;
-        } catch (IOException e) { throw new ExceptionInInitializerError(e); }
-    }
-
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", () -> POSTGRES == null ? System.getenv("TEST_DATABASE_URL") : POSTGRES.getJdbcUrl("postgres", "postgres"));
-        registry.add("spring.datasource.username", () -> System.getenv().getOrDefault("TEST_DATABASE_USER", "postgres"));
-        registry.add("spring.datasource.password", () -> System.getenv().getOrDefault("TEST_DATABASE_PASSWORD", "postgres"));
-        registry.add("app.auth.jwt-secret", () -> "dGVzdC1vbmx5LXNpZ25pbmcta2V5LTMyLWJ5dGVzLW1pbmltdW0=");
-        registry.add("app.cors-origins", () -> "chrome-extension://test-extension-id");
+        TestDatabase.properties(registry);
     }
 
     @Autowired MockMvc mvc;
@@ -51,7 +36,7 @@ class FoundationIntegrationTest {
     @Autowired JdbcTemplate jdbc;
 
     @Test void migrationAndAuthenticationLifecycle() throws Exception {
-        assertThat(jdbc.queryForObject("select count(*) from flyway_schema_history where success", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from flyway_schema_history where success", Integer.class)).isEqualTo(3);
         String email = newEmail();
         String token = registerAndLogin(email);
         mvc.perform(get("/api/v1/auth/me").header("Authorization", bearer(token))).andExpect(status().isOk()).andExpect(jsonPath("$.email").value(email));

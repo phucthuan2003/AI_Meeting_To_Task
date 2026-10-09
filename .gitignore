@@ -9,3 +9,5 @@
 *.iml
 *.log
 .local/
+__pycache__/
+*.py[cod]

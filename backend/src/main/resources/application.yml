@@ -36,6 +36,26 @@ management:
     health:
       show-details: never
 app:
+  llm:
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      model: ${OPENAI_MODEL:gpt-4.1-mini-2025-04-14}
+    gemini:
+      api-key: ${GEMINI_API_KEY:}
+      model: ${GEMINI_MODEL:gemini-2.5-flash}
+    request-timeout: 60s
+    max-input-bytes: 49152
+    max-output-tokens: 4096
+  analysis:
+    worker-enabled: ${ANALYSIS_WORKER_ENABLED:true}
+    poll-delay-ms: 1000
+    lease-duration: 30s
+    max-attempts: 3
+    max-manual-retries: 3
+    max-active-per-user: 2
+    preparation-batch-size: 100
+    context-tokens: 131072
+    reserved-tokens: 8192
   auth:
     jwt-secret: ${JWT_SIGNING_KEY:}
     issuer: ai-meeting-to-task

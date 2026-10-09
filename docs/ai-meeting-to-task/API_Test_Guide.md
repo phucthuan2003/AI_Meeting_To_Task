@@ -1,8 +1,8 @@
 # Hướng dẫn kiểm thử API AI Meeting to Task
 
-Cập nhật 05/10/2026. Tài liệu mô tả backend đã triển khai ở chặng 14.1, đối chiếu với controller, service, parser và cấu hình hiện tại. Dùng để test bằng Postman hoặc cURL: đăng ký → đăng nhập → nhập transcript → đọc preview/source → thay input → kiểm tra quyền → logout.
+Cập nhật 09/10/2026. Tài liệu mô tả backend foundation ở chặng 14.1, đối chiếu với controller, service, parser và cấu hình hiện tại. Dùng để test bằng Postman hoặc cURL: đăng ký → đăng nhập → nhập transcript → đọc preview/source → thay input → kiểm tra quyền → logout. DB analysis jobs có [guide riêng](Analysis_Job_Test_Guide.md); cấu hình/test hai adapter và đề xuất task ở [LLM Setup](LLM_Setup.md).
 
-Các status/response bên dưới là **kết quả mong đợi**. Ví dụ response là dữ liệu minh họa, không phải bản ghi thực tế. Chạy xong mới ghi Pass/Fail. Chưa có API analysis job, LLM, task/review, Trello, xóa meeting hoặc purge; không test các API đó theo SDS như thể đã triển khai.
+Các status/response bên dưới là **kết quả mong đợi**. Ví dụ response là dữ liệu minh họa, không phải bản ghi thực tế. Chạy xong mới ghi Pass/Fail. Đã code analysis job/policy, hai adapters và GET đề xuất task/evidence. Chưa có sửa/duyệt task, Trello, xóa meeting hoặc purge.
 
 ## 1 Chuẩn bị backend và dữ liệu
 
@@ -49,6 +49,23 @@ Long: Không đổi API.
 | GET | `/api/v1/meetings/{id}` | Bearer JWT | 200 |
 | GET | `/api/v1/meetings/{id}/transcript` | Bearer JWT | 200 |
 | PATCH | `/api/v1/meetings/{id}/input` | Bearer JWT | 200, JSON replacement |
+| GET | `/api/v1/analysis-policies` | Bearer JWT | 200, policy do server kiểm soát |
+| POST | `/api/v1/meetings/{id}/analysis-jobs` | Bearer JWT | 202, enqueue theo inputVersion |
+| GET | `/api/v1/jobs/{id}` | Bearer JWT | 200, progress/snapshot/error |
+| POST | `/api/v1/jobs/{id}/cancel` | Bearer JWT | 202, hủy/yêu cầu hủy |
+| POST | `/api/v1/jobs/{id}/retry` | Bearer JWT | 202 nếu lỗi retryable |
+| GET | `/api/v1/meetings/{id}/tasks` | Bearer JWT | 200 đề xuất của job COMPLETED hiện hành |
+
+GET meeting nay có currentAnalysisJobId nullable và analysisStatus thực. PATCH input bị từ chối 409 RESOURCE_BUSY nếu có job active; enqueue không tăng inputVersion. Chi tiết idempotency, owner, checkpoint/recovery/cancel xem guide job. GET tasks nhận optional analysisJobId: khác job hiện hành trả 409 STALE_VIEW; chưa có kết quả COMPLETED trả 409 ANALYSIS_NOT_READY; account khác trả 404. Trả envelope jobId/meetingId/transcriptRevision/inputVersion/providerId/model/result (events, candidates, warnings, usage, latency). Lời gọi GET này không enqueue/gọi AI.
+
+Sau khi job COMPLETED, trong Postman dùng GET `{{baseUrl}}/api/v1/meetings/{{meetingId}}/tasks?analysisJobId={{jobId}}`, Bearer JWT hiện hành. Với các biến cURL đã thiết lập:
+
+```sh
+curl -sS "$API/meetings/$MEETING_ID/tasks?analysisJobId=$JOB_ID" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+`JOB_ID` lấy từ response tạo job. Các candidates hiện chỉ đọc, `reviewStatus=PENDING_REVIEW`, `needsConfirmation=true`; chưa có API PATCH/approve/Trello. Xem LLM Setup để cấu hình provider và đối chiếu nội dung/người/hạn/evidence.
 
 Với JSON, gửi `Content-Type: application/json`. Với multipart, để client tự đặt Content-Type/boundary; không tự gõ header `multipart/form-data`. GET/logout không cần body. Register/login/health dùng **No Auth** trong Postman và không gửi Authorization cũ; token sai vẫn có thể bị security filter từ chối ở route public.
 
@@ -546,7 +563,9 @@ Giữ bản ghi cho mỗi lần chạy; mẫu bên dưới chưa có kết quả
 
 ## 7 Kiểm tra tự động và cơ sở đối chiếu
 
-Tests source ở [FoundationIntegrationTest.java](../../backend/src/test/java/vn/aimtt/FoundationIntegrationTest.java), cùng tests auth/parser/filter/rate limiter. Có 14 unit tests và 9 integration tests. Lượt triển khai trước đã chạy 23 tests trên PostgreSQL 16.13 và HTTP smoke đạt. Lượt chạy lại gần nhất chỉ xác nhận 14 unit tests/build; integration/HTTP bị chặn Docker socket. Các case thủ công trong tài liệu này chưa được chạy trong lượt viết tài liệu.
+Sau khi kiểm tra API, dùng [Extension Setup](Extension_Setup.md) để build/Load unpacked Side Panel, cấu hình CORS theo ID thật và kiểm tra luồng auth → input → preview → history → mở lại meeting. Backend test API và client fixture tests không thay thế checklist Chrome end-to-end.
+
+Tests source ở [FoundationIntegrationTest.java](../../backend/src/test/java/vn/aimtt/FoundationIntegrationTest.java), [AnalysisJobIntegrationTest.java](../../backend/src/test/java/vn/aimtt/AnalysisJobIntegrationTest.java) và [LlmIntegrationTest.java](../../backend/src/test/java/vn/aimtt/LlmIntegrationTest.java), cùng unit tests auth/parser/filter/rate limiter/jobs/llm/config. Suite hiện có 66 unit và 26 integration tests. Unit/package đạt; integration suite bị chặn socket khi khởi tạo PostgreSQL và HTTP smoke mới chưa chạy runtime. Kết quả V1 lịch sử không chứng minh V2/V3 đã pass. Extension 0.3.0 có 40 tests/build đạt với fixtures; hai adapter cần cấu hình/test thực theo [LLM Setup](LLM_Setup.md).
 
 Chạy toàn bộ bằng `python3 backend/scripts/run_local.py` từ terminal local có quyền Docker. Nếu đã có DB test rỗng riêng, xem README để đặt `TEST_DATABASE_*` và chạy `./mvnw verify`. Không trỏ tests vào DB chứa dữ liệu cần giữ.
 

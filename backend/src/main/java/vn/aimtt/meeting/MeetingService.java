@@ -11,13 +11,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.aimtt.common.ApiException;
 import vn.aimtt.transcript.*;
+import vn.aimtt.job.AnalysisJobStore;
 
 @Service
 public class MeetingService {
     public record MeetingView(UUID meetingId, long inputVersion, UUID transcriptRevision,
                               String title, LocalDate meetingDate, String timezone, String preview,
                               int characterCount, long segmentCount, List<String> warnings,
-                              String analysisStatus, Instant createdAt, Instant sourceExpiresAt) {}
+                              String analysisStatus, Instant createdAt, Instant sourceExpiresAt, UUID currentAnalysisJobId) {}
     public record MeetingSummary(UUID meetingId, String title, LocalDate meetingDate, long inputVersion, Instant createdAt) {}
     public record MeetingPage(List<MeetingSummary> items, String nextCursor) {}
     public record SegmentView(UUID segmentId, int sequence, String speaker, String timestamp,
@@ -30,11 +31,13 @@ public class MeetingService {
     private final SegmentRepository segments;
     private final InputProperties limits;
     private final Clock clock;
+    private final AnalysisJobStore jobs;
 
     public MeetingService(MeetingRepository meetings, RevisionRepository revisions, SegmentRepository segments,
-                          InputProperties limits, Clock clock) {
+                          InputProperties limits, Clock clock, AnalysisJobStore jobs) {
         this.meetings = meetings; this.revisions = revisions; this.segments = segments;
         this.limits = limits; this.clock = clock;
+        this.jobs = jobs;
     }
 
     @Transactional
@@ -51,6 +54,7 @@ public class MeetingService {
     public MeetingView replace(UUID owner, UUID id, long expectedVersion, String title,
                                LocalDate date, String timezone, ParsedTranscript input) {
         var meeting = meetings.findOwnedForUpdate(id, owner).orElseThrow(ApiException::notFound);
+        if (jobs.active(id)) throw new ApiException(HttpStatus.CONFLICT, "RESOURCE_BUSY", "Input đang được phân tích. Hủy hoặc chờ job kết thúc trước khi sửa.");
         if (meeting.inputVersion() != expectedVersion) {
             throw new ApiException(HttpStatus.CONFLICT, "STALE_VERSION", "Input đã thay đổi. Tải lại trước khi sửa.");
         }
@@ -60,6 +64,7 @@ public class MeetingService {
         meeting.replaceMetadata(blankToNull(title), date, blankToNull(timezone), now);
         appendRevision(meeting, revision, input, now);
         meetings.flush();
+        jobs.clearCurrent(id);
         return view(meeting);
     }
 
@@ -118,13 +123,15 @@ public class MeetingService {
     private Meeting owned(UUID owner, UUID id) { return meetings.findByIdAndUserId(id, owner).orElseThrow(ApiException::notFound); }
     private TranscriptRevision revision(Meeting meeting) { return revisions.findById(meeting.currentRevisionId()).orElseThrow(ApiException::notFound); }
     private MeetingView view(Meeting meeting) {
+        var job = jobs.current(meeting.id(), meeting.currentRevisionId(), meeting.inputVersion());
         var revision = revision(meeting);
         String text = Optional.ofNullable(revision.normalizedContent()).orElse("");
         int end = Math.min(4000, text.length());
         if (end > 0 && end < text.length() && Character.isHighSurrogate(text.charAt(end - 1))) end--;
         return new MeetingView(meeting.id(), meeting.inputVersion(), revision.id(), meeting.title(), meeting.meetingDate(),
                 meeting.timezone(), text.substring(0, end), text.length(), segments.countByRevisionId(revision.id()),
-                revision.warnings(), "NOT_STARTED", meeting.createdAt(), revision.expiresAt());
+                revision.warnings(), job.map(j -> j.status().name()).orElse("NOT_STARTED"), meeting.createdAt(), revision.expiresAt(),
+                job.map(j -> j.id()).orElse(null));
     }
 
     private void validateMetadata(String title, String timezone) {

@@ -1,0 +1,47 @@
+@import url('./theme.css');
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--background); color: var(--ink); font: 14px/1.55 system-ui, -apple-system, sans-serif; }
+main { width: 100%; max-width: 620px; margin: auto; padding: 20px 16px 28px; }
+h1, h2, h3, h4, p { margin: 0 0 12px; }
+h1 { font-size: 20px; letter-spacing: -.5px; }
+h2 { font-size: 20px; line-height: 1.3; overflow-wrap: anywhere; }
+h3 { font-size: 15px; } h4 { font-size: 13px; }
+.app-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.app-header p { color: var(--muted); font-size: 12px; margin: 0; } .app-header h1 { margin: 0; }
+.brand-mark { background: var(--accent); color: white; border-radius: 12px; padding: 8px 14px; font-weight: 750; font-size: 23px; }
+.card { background: white; padding: 18px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 14px; }
+.eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+.muted, .optional { color: var(--muted); } .optional, .small { font-size: 12px; }
+.break { overflow-wrap: anywhere; } .danger { color: #aa293b; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; border: 1px solid var(--line); background: white; color: var(--ink); border-radius: 8px; padding: 9px 12px; line-height: 1.3; }
+button:hover:not(:disabled) { background: #edf4f2; border-color: var(--accent); }
+button:disabled { cursor: wait; opacity: .55; }
+button.primary { background: var(--accent); border-color: var(--accent); color: white; font-weight: 650; }
+button.primary:hover:not(:disabled) { background: #1d514a; } button.text { background: transparent; border-color: transparent; color: var(--accent); }
+.full { width: 100%; } button + button.full { margin-top: 8px; }
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 14px; }
+input:not([type=file]), textarea, select { display: block; width: 100%; margin-top: 5px; border: 1px solid #cbd5d3; border-radius: 7px; background: #fff; color: var(--ink); padding: 9px; min-width: 0; }
+textarea { resize: vertical; line-height: 1.6; font-weight: normal; }
+input[type=file] { display: block; width: 100%; margin-top: 10px; font-size: 12px; }
+:focus-visible { outline: 3px solid #68b3a7; outline-offset: 2px; }
+.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.row, .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; } .row { justify-content: space-between; } .row h2 { margin: 0; }
+.actions { margin-top: 12px; }
+.switch { display: flex; gap: 8px; margin: 12px 0; } [aria-pressed=true], nav [aria-current=page] { color: var(--accent); background: var(--soft); border-color: var(--accent); }
+nav { display: flex; flex-wrap: wrap; gap: 7px; margin: 14px 0; } nav button { font-size: 12px; flex-grow: 1; }
+.account { margin-top: 14px; } .account button { font-size: 12px; }
+.connection { border: 1px solid var(--line); padding: 10px 12px; border-radius: 9px; color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+.connection summary { cursor: pointer; font-weight: 600; } .connection p { margin-top: 10px; }
+.notice { border-radius: 8px; background: var(--soft); padding: 12px; color: #285b53; font-size: 12px; margin: 12px 0; overflow-wrap: anywhere; }
+.error { background: #fff0ee; color: #8b2435; border: 1px solid #f1cbc7; } .error .small { margin-top: 6px; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0; } .stats div { background: var(--background); padding: 12px; border-radius: 8px; }
+.stats strong, .stats span { display: block; } .stats strong { font-size: 20px; } .stats span { font-size: 11px; color: var(--muted); }
+.transcript { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.7 system-ui, sans-serif; background: var(--background); border-radius: 7px; padding: 12px; max-height: 380px; overflow: auto; }
+.segment { border-bottom: 1px solid var(--line); padding: 12px 0; } .segment summary { cursor: pointer; overflow-wrap: anywhere; } .segment p { white-space: pre-wrap; margin: 4px 0; }
+.locator { white-space: pre-wrap; overflow-wrap: anywhere; background: #f3f5f4; padding: 8px; color: var(--muted); }
+.history-item { display: flex; flex-direction: column; gap: 4px; text-align: left; margin-top: 10px; overflow-wrap: anywhere; }
+footer { text-align: center; margin-top: 24px; color: var(--muted); font-size: 11px; }
+.candidate { border-top: 1px solid var(--line); padding: 14px 0; overflow-wrap: anywhere; }
+@media (max-width: 350px) { main { padding: 14px 10px; } .card { padding: 14px; } .columns { grid-template-columns: 1fr; gap: 0; } }

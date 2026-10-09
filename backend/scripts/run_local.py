@@ -55,7 +55,8 @@ def main():
                    SMOKE_DATABASE_URL=db_url, SMOKE_DATABASE_USER="postgres", SMOKE_DATABASE_PASSWORD=password,
                    SMOKE_PORT=api_port, DATABASE_URL=db_url, DATABASE_USER="postgres", DATABASE_PASSWORD=password,
                    JWT_SIGNING_KEY=base64.b64encode(secrets.token_bytes(32)).decode(),
-                   PORT=api_port, SERVER_ADDRESS="127.0.0.1", EXTENSION_ORIGIN_ALLOWLIST="")
+                   PORT=api_port, SERVER_ADDRESS="127.0.0.1",
+                   EXTENSION_ORIGIN_ALLOWLIST=os.environ.get("EXTENSION_ORIGIN_ALLOWLIST", ""))
         maven = [str(BACKEND / ("mvnw.cmd" if os.name == "nt" else "mvnw")), "-B", "verify"]
         cache = Path("/private/tmp/ai-mtt-m2")
         wrapper_cache = Path("/private/tmp/ai-mtt-maven-home")
