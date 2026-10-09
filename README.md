@@ -10,7 +10,7 @@ Hiện có backend foundation, DB analysis queue/lease/checkpoints, hai adapter 
 
 [Hướng dẫn test màn hình review task (14.4)](docs/ai-meeting-to-task/Review_Test_Guide.md).
 
-[Cấu hình Trello (14.5)](docs/ai-meeting-to-task/Trello_Setup.md) · [Kịch bản demo với Trello giả](docs/ai-meeting-to-task/Demo_Script.md) · [Test toàn bộ 14.5–14.8](docs/ai-meeting-to-task/Full_Test_Guide.md) · [Đánh giá AI/usability](docs/ai-meeting-to-task/Evaluation_Guide.md) · [Browser E2E](tools/e2e/README.md).
+[Cấu hình Trello (14.5)](docs/ai-meeting-to-task/Trello_Setup.md) · [Test với Trello thật](docs/ai-meeting-to-task/Real_Trello_Test.md) · [Kịch bản demo với Trello giả](docs/ai-meeting-to-task/Demo_Script.md) · [Test toàn bộ 14.5–14.8](docs/ai-meeting-to-task/Full_Test_Guide.md) · [Đánh giá AI/usability](docs/ai-meeting-to-task/Evaluation_Guide.md) · [Browser E2E](tools/e2e/README.md).
 
 Biến mới: `TOKEN_ENCRYPTION_KEY` (bắt buộc để lưu kết nối Trello, 32 byte base64), `TRELLO_API_KEY` hoặc `TRELLO_CLIENT_ID/SECRET/CALLBACK_URL`, tùy chọn `CHUNKING_ENABLED` (mặc định false), `SYNC_WORKER_ENABLED`, `RETENTION_ENABLED`, `TRELLO_TIMEOUT`, `JOB_LEASE_SECONDS`.
 
