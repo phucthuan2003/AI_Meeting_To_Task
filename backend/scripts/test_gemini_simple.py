@@ -1,4 +1,6 @@
 import os
+import time
+import random
 import requests
 
 API_KEY = os.getenv("GEMINI_API_KEY")
@@ -6,9 +8,11 @@ API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_KEY:
     raise RuntimeError("Chưa cấu hình GEMINI_API_KEY")
 
+MODEL = "gemini-3.6-flash"
+
 url = (
-    "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-3.8-flash:generateContent"
+    f"https://generativelanguage.googleapis.com/v1beta/"
+    f"models/{MODEL}:generateContent"
 )
 
 payload = {
@@ -16,34 +20,63 @@ payload = {
         {
             "role": "user",
             "parts": [
-                {"text": "1 + 1 bằng bao nhiêu? Trả lời ngắn gọn."}
+                {
+                    "text": (
+                        "Nam: Mai hoàn thành màn hình đăng nhập "
+                        "trước 17:00 ngày 12/10/2026. "
+                        "Hãy chuyển thành một task bàn giao công việc."
+                    )
+                }
             ]
         }
     ]
 }
 
-response = requests.post(
-    url,
-    headers={
-        "x-goog-api-key": API_KEY,
-        "Content-Type": "application/json"
-    },
-    json=payload,
-    timeout=60
-)
+headers = {
+    "x-goog-api-key": API_KEY,
+    "Content-Type": "application/json"
+}
 
-print("HTTP STATUS:", response.status_code)
+for attempt in range(1, 5):
+    print(f"\nĐang thử lần {attempt}/4...")
 
-try:
-    data = response.json()
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
 
-    if response.ok:
-        print("GEMINI RESPONSE:")
-        print(data["candidates"][0]["content"]["parts"][0]["text"])
-    else:
-        print("API ERROR:")
-        print(data)
+        print("HTTP STATUS:", response.status_code)
+        data = response.json()
 
-except (ValueError, KeyError, IndexError, TypeError) as e:
-    print("Lỗi đọc response:", e)
-    print(response.text[:2000])
+        if response.ok:
+            parts = data["candidates"][0]["content"]["parts"]
+            answer = "".join(
+                part.get("text", "") for part in parts
+            )
+
+            print("\nGEMINI RESPONSE:")
+            print(answer or "Không có nội dung văn bản.")
+            break
+
+        print("API ERROR:", data.get("error", data))
+
+        if response.status_code not in (408, 429, 500, 502, 503, 504):
+            break
+
+    except requests.RequestException as e:
+        print("NETWORK ERROR:", e)
+
+    except ValueError as e:
+        print("JSON ERROR:", e)
+        break
+
+    if attempt < 4:
+        delay = min(2 ** (attempt - 1), 8) + random.uniform(0, 1)
+        print(f"Thử lại sau {delay:.1f} giây...")
+        time.sleep(delay)
+
+else:
+    print("\nKhông thành công sau 4 lần thử.")

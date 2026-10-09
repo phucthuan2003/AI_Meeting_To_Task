@@ -12,6 +12,12 @@ import urllib.request
 import urllib.parse
 import gemini_http
 
+from dotenv import load_dotenv
+BASE_DIR = Path(__file__).resolve().parents[2]
+ENV_FILE = BASE_DIR / ".env"
+
+load_dotenv(dotenv_path=ENV_FILE)
+
 REASONS = {"API_KEY_INVALID", "API_KEY_EXPIRED", "API_KEY_SERVICE_BLOCKED", "API_KEY_HTTP_REFERRER_BLOCKED", "API_KEY_IP_ADDRESS_BLOCKED", "SERVICE_DISABLED", "BILLING_DISABLED", "CONSUMER_INVALID", "ACCESS_TOKEN_EXPIRED", "IAM_PERMISSION_DENIED"}
 STATUSES = {"INVALID_ARGUMENT", "NOT_FOUND", "PERMISSION_DENIED", "UNAUTHENTICATED", "FAILED_PRECONDITION", "RESOURCE_EXHAUSTED", "UNAVAILABLE", "INTERNAL", "DEADLINE_EXCEEDED"}
 FIELDS = ("responseFormat", "responseJsonSchema", "responseMimeType", "mimeType", "thinkingConfig", "thinkingBudget", "thinkingLevel", "maxOutputTokens", "systemInstruction", "contents", "enum", "maxLength", "additionalProperties", "required")
@@ -193,8 +199,8 @@ def main(argv=()):
     parser.add_argument("--details", action="store_true", help="Show redacted Google error text for synthetic requests.")
     parser.add_argument("--isolate", action="store_true", help="Compare text, three JSON formats, full schema and full probe; at most six requests.")
     args = parser.parse_args(argv)
-    key = os.environ.get("GEMINI_API_KEY", "")
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    model = os.getenv("GEMINI_MODEL", "gemini-3.6-flash").strip()
     if not key or any(ord(c) < 33 or ord(c) > 126 for c in key) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}", model):
         print("Cần nạp GEMINI_API_KEY và model ID hợp lệ từ .env trước; không in key.")
         return 2
