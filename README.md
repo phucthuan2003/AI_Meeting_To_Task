@@ -4,6 +4,8 @@ Chuyển transcript thành công việc được người dùng duyệt rồi t�
 
 Hiện có backend foundation, DB analysis queue/lease/checkpoints, hai adapter OpenAI/Gemini, task nháp có version (Flyway V4) và Chrome React Side Panel **0.5.0**. Chặng 14.5–14.8 bổ sung: kết nối Trello (OAuth 2.0 + PKCE hoặc API key + token, token mã hóa AES-GCM ở backend), chọn Board/List, đối chiếu người phụ trách (gợi ý/trùng tên, không tự giao), gợi ý hạn theo ngày họp, snapshot bất biến + approve-and-sync có Idempotency-Key, worker tạo card với lease, trạng thái UNKNOWN + đối soát bằng mã `AI_MTT_REF` (Flyway V5); chunking transcript dài có checkpoint từng phần, PARTIAL_FAILED và resume, retention purge, xóa transcript/meeting, processing logs không chứa nội dung (V6); Trello giả, Browser E2E, dataset đánh giá và kịch bản demo. Mỗi chặng ghi kết quả thật tại `docs/ai-meeting-to-task/Implementation_Progress.md` và cập nhật `SDS_v3_Context.md`.
 
+[Cây thư mục và chú thích từng file](docs/ai-meeting-to-task/Directory_Tree.md) — tra cứu cấu trúc, vai trò module và luồng đọc code.
+
 ## Chrome Extension
 
 [Hướng dẫn build, Load unpacked, CORS và test extension](docs/ai-meeting-to-task/Extension_Setup.md).

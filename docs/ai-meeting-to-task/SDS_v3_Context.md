@@ -223,3 +223,11 @@ Kết quả kiểm thử:
 Chưa kiểm chứng: Trello/Atlassian thật, AI thật trên dataset, usability, Vite build trên macOS và migration trên DB của người dùng.
 
 Chi tiết: Implementation_Progress Bước 24–28.
+
+
+## Cập nhật báo cáo ngày 10/10/2026
+
+Người dùng xác nhận đã tạo và kiểm tra card trên Trello thật từ extension. Chưa xác định phương thức kết nối, chưa đính kèm checklist/ảnh; không coi đây là xác nhận riêng OAuth Atlassian hoặc benchmark AI. Đã chạy lại npm run check trên máy hiện tại: 61 tests + Vite/MV3 build đạt. Báo cáo cho giảng viên ngày 11/10 tại Bao_Cao_Tien_Do_2026-10-10.md, gồm lịch sử, kiến trúc/luồng, kết quả có phân biệt nguồn, hạn chế, kế hoạch, demo và lời trình bày. Backend 134 tests/E2E vẫn dẫn nhật ký Bước 28, không tuyên bố chạy lại trong lượt tổng hợp; XML target local là reports cũ.
+
+
+Ngày 10/10: thêm Directory_Tree.md chú thích từng file nguồn/cấu hình/test/tài liệu (192 file tại lúc tạo), giải thích artifact sinh tự động và bản đồ đọc code. README đã liên kết. Đây là tài liệu cấu trúc, không thay đổi runtime hoặc kết quả kiểm thử.

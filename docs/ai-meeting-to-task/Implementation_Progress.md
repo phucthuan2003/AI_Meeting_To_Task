@@ -333,3 +333,19 @@ Kết quả chặng 14.1 dưới đây là của lượt triển khai trước. 
   3. Chạy Demo_Script với Trello giả, rồi Full_Test_Guide mục 2.
   4. Thử Board Trello thật bằng token.
   5. Chạy run_eval/evaluate với provider thật, rồi tổ chức usability crossover.
+
+
+## Bước 29 Tổng hợp báo cáo cho giảng viên ngày 11/10/2026
+
+- Ngày 10/10: rà soát tài liệu và code hiện tại (extension 0.5.0, backend V1–V6), viết Bao_Cao_Tien_Do_2026-10-10.md: lịch sử triển khai, kiến trúc, luồng nhập/phân tích/review/Trello, cơ chế version/lease/idempotency/UNKNOWN/privacy, giới hạn, kế hoạch, kịch bản demo và bản phát biểu.
+- Người dùng xác nhận đã tạo và kiểm tra card trên Trello thật từ extension. Đây là xác nhận kiểm thử thủ công; chưa có ảnh/checklist chi tiết và chưa xác định token mode hay OAuth. Không suy ra OAuth Atlassian thật hoặc độ chính xác AI trên dataset đã đạt.
+- Chạy lại trên máy hiện tại: npm run check — 61/61 tests đạt, Vite 7.3.7 build đạt, MV3 verified với backend http://127.0.0.1:8080. Không thay code ứng dụng.
+- Đối chiếu bằng chứng: 134 tests backend và Browser E2E là kết quả ghi trong Bước 28 (Linux, PostgreSQL thật, Trello/AI giả ở E2E), chưa chạy lại trong lượt này. Các XML target local còn lượt cũ với lỗi khởi tạo PostgreSQL, không dùng làm report mới. Cần lưu bộ report theo commit để nghiệm thu.
+- Bước tiếp: lưu ảnh/checklist demo Trello thật, tái lập backend reports, chạy baseline AI và usability.
+
+
+## Bước 30 Cây thư mục có chú thích từng file
+
+- Ngày 10/10: tạo Directory_Tree.md từ danh sách file hiện có, chú thích riêng 192 file nguồn/cấu hình/test/tài liệu, bao gồm chính tài liệu mới. Đối chiếu các class, API, export và script; phân biệt production/test/demo.
+- Bổ sung bảng file cục bộ/build/cache, giải thích Controller/Service/Store/Worker/Provider và bản đồ file theo luồng nhập, phân tích, review, tạo card, retention. Ghi rõ manifest được sinh khi build; GeminiSchema chỉ còn dùng trong test tương thích; chưa có module ghi âm/STT.
+- Kiểm tra mọi file trong phạm vi đều có mô tả, cấu trúc theo đường dẫn thật và diff whitespace. Chỉ sửa tài liệu, không chạy lại tests ứng dụng hoặc đọc giá trị .env. README có liên kết đến cây thư mục.
