@@ -48,7 +48,7 @@ export function InputForm({ initial, version, busy, onSave, onDirty, onCancel })
   return <section className="card">
     <p className="eyebrow">{editing ? `SỬA INPUT · VERSION ${version}` : 'TRANSCRIPT'}</p>
     <h2>{editing ? 'Thay input đã lưu' : 'Nhập nội dung cuộc họp'}</h2>
-    {editing && <p className="notice">Lưu sẽ tạo revision mới từ văn bản bạn nhập. Nguồn TXT/DOCX cũ vẫn thuộc revision trước. Tải lại nếu gặp version conflict.</p>}
+    {editing && <p className="notice">Lưu sẽ tạo revision mới từ văn bản bạn nhập. Nguồn file cũ vẫn thuộc revision trước. Tải lại nếu gặp version conflict.</p>}
     <form onSubmit={event => {
       event.preventDefault(); setError(null);
       try {
@@ -65,14 +65,14 @@ export function InputForm({ initial, version, busy, onSave, onDirty, onCancel })
         <p className="small muted">Ngày họp để trống nếu chưa biết. Kiểm tra lại múi giờ gợi ý từ trình duyệt.</p>
         {!editing && <div className="switch" role="group" aria-label="Cách nhập">
           <button type="button" aria-pressed={mode === 'paste'} onClick={() => { setMode('paste'); setError(null); }}>Dán văn bản</button>
-          <button type="button" aria-pressed={mode === 'file'} onClick={() => { setMode('file'); setError(null); }}>TXT / DOCX</button>
+          <button type="button" aria-pressed={mode === 'file'} onClick={() => { setMode('file'); setError(null); }}>TXT / DOCX / VTT / SRT</button>
         </div>}
         {mode === 'paste' ? <>
           <label>Nội dung<textarea rows={10} value={draft.transcriptText} onChange={e => update('transcriptText', e.target.value)} placeholder="Dán transcript, giữ nhãn người nói và timestamp nếu có…" required /></label>
           <p className={`small ${draft.transcriptText.length > MAX_TEXT ? 'danger' : 'muted'}`}>{draft.transcriptText.length.toLocaleString('vi-VN')} / 200.000 ký tự UTF-16</p>
         </> : <>
-          <label className="upload">Chọn một file<input type="file" accept=".txt,.docx" onChange={e => { setFile(e.target.files?.[0] ?? null); onDirty(); }} required /></label>
-          <p className="small muted">Tối đa 10 MiB. TXT dùng UTF-8; DOCX chỉ đọc nội dung body. Backend kiểm tra và chuẩn hóa văn bản.</p>
+          <label className="upload">Chọn một file<input type="file" accept=".txt,.docx,.vtt,.srt" onChange={e => { setFile(e.target.files?.[0] ?? null); onDirty(); }} required /></label>
+          <p className="small muted">Tối đa 10 MiB. TXT/VTT/SRT dùng UTF-8; phụ đề giữ timestamp, DOCX chỉ đọc nội dung body. Backend kiểm tra và chuẩn hóa văn bản.</p>
         </>}
         <p className="small muted">Bấm lưu để gửi transcript tới backend và xem preview. Nội dung chưa lưu sẽ mất khi đóng panel.</p>
         <ErrorNotice error={error} />

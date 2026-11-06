@@ -375,3 +375,56 @@ Thao tác người dùng đi qua `PrivacyController → PrivacyService`. Dọn t
 7. `db/migration/V1…V6` và các integration tests: đối chiếu dữ liệu và tình huống kiểm thử.
 
 Trong các bước 3–6, đường dẫn package tính từ `backend/src/main/java/vn/aimtt/`; migration tính từ `backend/src/main/resources/`.
+
+
+## Bổ sung MVP v2 ngày 28/10/2026
+
+Cây ở trên là snapshot 10/10. Chặng 1 thêm các file sau:
+
+```text
+backend/src/main/java/vn/aimtt/transcript/SubtitleParser.java  # Parser cue VTT/SRT, timestamp/voice/offsets
+backend/src/main/resources/db/migration/V7__subtitle_sources.sql  # Cho phép source_type VTT/SRT
+backend/src/test/java/vn/aimtt/transcript/SubtitleParserTest.java  # Test phụ đề/nguồn/encoding/giới hạn
+extension/src/selection.mjs  # Nhận text từ context menu, phiên và quyền mở panel
+extension/tests/selection.test.mjs  # Test đoạn chọn, giới hạn và cách chuyển vào panel
+docs/ai-meeting-to-task/MVP_v2_Upgrade_Progress.md  # Lộ trình, đánh giá từng chặng và checklist
+docs/ai-meeting-to-task/samples/meeting.vtt  # Phụ đề VTT giả để thử
+docs/ai-meeting-to-task/samples/meeting.srt  # Phụ đề SRT tương ứng để thử
+```
+
+Extension hiện 0.6.0; manifest thêm contextMenus. app/service-worker/input/components đã cập nhật để nhận phụ đề và đoạn chọn. Chưa có code audio/STT/SSE ở chặng 1.
+
+
+## Bổ sung chặng 2–5 MVP v2 — extension 0.7.0
+
+```text
+backend/src/main/java/vn/aimtt/capture/
+├── AudioProperties.java      # Key/model STT và cờ worker, không in secret
+├── AudioInput.java           # Giới hạn file, kiểm tra signature và checksum
+├── SttProvider.java          # Hợp đồng chuyển audio thành segment có thời gian
+├── GroqSttProvider.java      # Multipart Groq STT với transport giới hạn/lease
+├── CaptureService.java       # Session/queue/checkpoint, version, overrides, publish và retention tạm
+├── CaptureController.java    # API list/create/upload/stop/retry/cancel/edit/publish
+└── CaptureWorker.java        # Nhận queue, STT, incremental AI, validate và checkpoint
+backend/src/main/java/vn/aimtt/stream/
+├── SnapshotStreams.java      # SSE snapshot, heartbeat, auth expiry và cleanup
+└── StreamController.java     # SSE cho capture/job, đề xuất tạm từ checkpoint
+backend/src/main/resources/db/migration/V8__audio_live_sessions.sql  # Sessions/chunks/audio source/usage
+backend/src/test/java/vn/aimtt/CaptureIntegrationTest.java           # DB/API/finalize/owner/version/cancel
+backend/src/test/java/vn/aimtt/capture/
+├── SttProviderTest.java       # STT, lỗi, signature và giới hạn
+└── CaptureWorkerTest.java    # Checkpoint trước LLM, resume và validate
+extension/
+├── offscreen.html            # Document giữ stream độc lập với panel
+├── microphone.html           # Trang cấp quyền mic rõ ràng
+└── src/
+    ├── AudioPanel.jsx        # Upload/live, khôi phục session, sửa và chốt bản nháp
+    ├── audio.mjs             # WAV độc lập, giới hạn và patch chỉ trường đã sửa
+    ├── offscreen.mjs         # Mix tab/mic, buffer/queue, upload và điều khiển media
+    ├── pcm-processor.mjs     # AudioWorklet chuyển PCM mono về offscreen
+    ├── microphone.mjs        # Thử quyền mic rồi dừng tracks, không upload
+    └── streams.mjs           # Parser SSE phân mảnh, Bearer, reconnect và dừng
+extension/tests/audio-streams.test.mjs  # PCM/WAV/SSE/auth/upload/live override
+```
+
+`App.jsx`, `AnalysisPanel.jsx`, `api.mjs`, service worker, manifest generator, build/E2E scripts và PrivacyService đã nối các module mới. Tài liệu chạy: MVP_v2_Test_Guide.md. Stage 4 hỗ trợ tab Chrome, chưa phải system audio mọi ứng dụng desktop.

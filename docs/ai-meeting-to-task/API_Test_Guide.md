@@ -618,3 +618,25 @@ Xóa dữ liệu:
 - Cả hai trả 204 khi thành công.
 - Trả 409 `RESOURCE_BUSY` khi job phân tích đang chạy. Riêng xóa meeting cũng trả 409 khi còn card đang tạo hoặc chờ đối soát.
 - Card đã tạo trên Trello không bị xóa.
+
+
+## API audio/live/SSE — extension 0.7.0 (28/10/2026)
+
+Tất cả yêu cầu Bearer JWT. Key STT chỉ ở backend. Các lệnh POST không tự retry. SSE đọc snapshot DB, không tạo job.
+
+| Method | Path | Tác dụng |
+| --- | --- | --- |
+| GET | `/api/v1/captures/config` | Readiness key STT và giới hạn |
+| GET | `/api/v1/captures` | Tối đa 20 phiên chưa hết hạn của account để khôi phục |
+| POST | `/api/v1/captures` | `{mode: FILE hoặc LIVE, title, meetingDate, timezone, providerId}`; Idempotency-Key bắt buộc; providerId cần cho LIVE |
+| GET | `/api/v1/captures/{id}` | Snapshot: version/status/sources/proposals/overrides/usage; owner-scoped |
+| POST | `/api/v1/captures/{id}/chunks/{sequence}?startMs=0` | Multipart `file`; sequence từ 0, đúng thứ tự, checksum dedup |
+| POST | `/api/v1/captures/{id}/stop` | `{chunkCount:n}`; DRAINING rồi READY khi xử lý hết |
+| POST | `/api/v1/captures/{id}/retry` | Retry chủ động từ checkpoint; LIVE trở về OPEN để nhận đoạn local đang chờ, FILE về DRAINING |
+| POST | `/api/v1/captures/{id}/cancel` | Xóa audio/transcript/events/overrides tạm; không publish |
+| PATCH | `/api/v1/captures/{id}/drafts` | `{expectedVersion,taskRef,patch}`; patch chỉ taskName/assigneeRaw/deadlineRaw/priority |
+| POST | `/api/v1/captures/{id}/publish` | READY → PUBLISHED, trả meetingId; lặp trả cùng meeting |
+| GET | `/api/v1/captures/{id}/events` | SSE: snapshot, auth-expired; Bearer trong header |
+| GET | `/api/v1/jobs/{id}/events` | SSE: job + candidate tạm từ chunk hoàn tất |
+
+Sources audio là transcript do STT nhận dạng, speaker chưa xác định; evidence không chứng minh audio gốc được chép đúng. Xem MVP_v2_Test_Guide.md cho vòng đời audio, permission Chrome, lỗi và checklist thực nghiệm.

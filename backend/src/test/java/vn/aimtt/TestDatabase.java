@@ -21,6 +21,7 @@ final class TestDatabase {
         registry.add("app.auth.jwt-secret", () -> "dGVzdC1vbmx5LXNpZ25pbmcta2V5LTMyLWJ5dGVzLW1pbmltdW0=");
         registry.add("app.cors-origins", () -> "chrome-extension://test-extension-id");
         registry.add("app.analysis.worker-enabled", () -> false);
+        registry.add("app.audio.worker-enabled", () -> false);
         registry.add("app.llm.openai.api-key", () -> "");
         registry.add("app.llm.gemini.api-key", () -> "");
     }

@@ -17,5 +17,10 @@ await build({ entryPoints: { panel: path.join(root, 'src/main.jsx') }, outdir: p
   target: 'chrome116', minify: true, define: { __API_ORIGIN__: JSON.stringify(origin), 'process.env.NODE_ENV': '"production"' }, logLevel: 'warning' });
 await build({ entryPoints: [path.join(root, 'src/service-worker.mjs')], outfile: path.join(out, 'service-worker.js'), bundle: true, format: 'esm', target: 'chrome116', logLevel: 'warning' });
 await writeFile(path.join(out, 'sidepanel.html'), '<!doctype html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Meeting to Task</title><link rel="stylesheet" href="./assets/panel.css"></head><body><div id="root"></div><script type="module" src="./assets/panel.js"></script></body></html>');
+await build({ entryPoints: [path.join(root, 'src/offscreen.mjs')], outfile: path.join(out, 'offscreen.js'), bundle: true, format: 'esm', target: 'chrome116', define: { __API_ORIGIN__: JSON.stringify(origin) } });
+await build({ entryPoints: [path.join(root, 'src/pcm-processor.mjs')], outfile: path.join(out, 'pcm-processor.js'), bundle: true, format: 'esm', target: 'chrome116' });
+await writeFile(path.join(out, 'offscreen.html'), '<!doctype html><html><head><meta charset="UTF-8"></head><body><script type="module" src="./offscreen.js"></script></body></html>');
+await build({ entryPoints: [path.join(root, 'src/microphone.mjs')], outfile: path.join(out, 'microphone.js'), bundle: true, format: 'esm', target: 'chrome116' });
+await writeFile(path.join(out, 'microphone.html'), '<!doctype html><html><head><meta charset="UTF-8"></head><body><button id="grant">Cho phép microphone</button><p id="status"></p><script type="module" src="./microphone.js"></script></body></html>');
 await writeFile(path.join(out, 'manifest.json'), JSON.stringify(extensionManifest(origin), null, 2));
 console.log(`Extension built at ${out} for ${origin}`);

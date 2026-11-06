@@ -137,6 +137,7 @@ public class PrivacyService {
         jdbc.update("delete from processing_logs where created_at < ?", Timestamp.from(now.minus(properties.logRetention())));
         jdbc.update("delete from auth_sessions where expires_at < ?", Timestamp.from(now.minus(properties.sessionRetention())));
         jdbc.update("delete from authorization_transactions where expires_at < ?", Timestamp.from(now.minus(java.time.Duration.ofDays(1))));
+        jdbc.update("delete from capture_sessions where expires_at < now()");
         if (purged > 0) log.info("Retention purged revisions count={}", purged);
         return purged;
     }

@@ -1,4 +1,8 @@
 spring:
+  task:
+    scheduling:
+      pool:
+        size: 4
   application:
     name: ai-meeting-to-task
   datasource:
@@ -36,6 +40,12 @@ management:
     health:
       show-details: never
 app:
+  audio:
+    api-key: ${GROQ_API_KEY:}
+    model: ${STT_MODEL:whisper-large-v3-turbo}
+    intelligence-url: ${INTELLIGENCE_STT_URL:}
+    intelligence-api-key: ${INTELLIGENCE_API_KEY:}
+    worker-enabled: ${AUDIO_WORKER_ENABLED:true}
   llm:
     openai:
       api-key: ${OPENAI_API_KEY:}

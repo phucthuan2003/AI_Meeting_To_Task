@@ -1,0 +1,12 @@
+1
+00:00:01,250 --> 00:00:05,000
+Nam: Mai hoàn thành màn hình đăng nhập
+trước 17:00 ngày 30/10/2026.
+
+2
+00:00:06,000 --> 00:00:10,500
+Nam: Huy kiểm thử API trước 10:00 ngày 31/10/2026.
+
+3
+00:00:11,000 --> 00:00:15,000
+Nam: À, màn hình đăng nhập chuyển cho Huy, giữ nguyên hạn.

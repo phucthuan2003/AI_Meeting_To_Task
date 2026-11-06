@@ -2,9 +2,19 @@
 
 Chuyển transcript thành công việc được người dùng duyệt rồi tạo trên Trello. Thiết kế chuẩn ở `docs/ai-meeting-to-task/AI_Meeting_to_Task_SDS_v3.docx`.
 
-Hiện có backend foundation, DB analysis queue/lease/checkpoints, hai adapter OpenAI/Gemini, task nháp có version (Flyway V4) và Chrome React Side Panel **0.5.0**. Chặng 14.5–14.8 bổ sung: kết nối Trello (OAuth 2.0 + PKCE hoặc API key + token, token mã hóa AES-GCM ở backend), chọn Board/List, đối chiếu người phụ trách (gợi ý/trùng tên, không tự giao), gợi ý hạn theo ngày họp, snapshot bất biến + approve-and-sync có Idempotency-Key, worker tạo card với lease, trạng thái UNKNOWN + đối soát bằng mã `AI_MTT_REF` (Flyway V5); chunking transcript dài có checkpoint từng phần, PARTIAL_FAILED và resume, retention purge, xóa transcript/meeting, processing logs không chứa nội dung (V6); Trello giả, Browser E2E, dataset đánh giá và kịch bản demo. Mỗi chặng ghi kết quả thật tại `docs/ai-meeting-to-task/Implementation_Progress.md` và cập nhật `SDS_v3_Context.md`.
+Hiện có backend foundation, DB analysis queue/lease/checkpoints, hai adapter OpenAI/Gemini, task nháp có version (Flyway V4) và Chrome React Side Panel **0.7.0**. Chặng 14.5–14.8 bổ sung: kết nối Trello (OAuth 2.0 + PKCE hoặc API key + token, token mã hóa AES-GCM ở backend), chọn Board/List, đối chiếu người phụ trách (gợi ý/trùng tên, không tự giao), gợi ý hạn theo ngày họp, snapshot bất biến + approve-and-sync có Idempotency-Key, worker tạo card với lease, trạng thái UNKNOWN + đối soát bằng mã `AI_MTT_REF` (Flyway V5); chunking transcript dài có checkpoint từng phần, PARTIAL_FAILED và resume, retention purge, xóa transcript/meeting, processing logs không chứa nội dung (V6); Trello giả, Browser E2E, dataset đánh giá và kịch bản demo. Mỗi chặng ghi kết quả thật tại `docs/ai-meeting-to-task/Implementation_Progress.md` và cập nhật `SDS_v3_Context.md`.
 
 [Cây thư mục và chú thích từng file](docs/ai-meeting-to-task/Directory_Tree.md) — tra cứu cấu trúc, vai trò module và luồng đọc code.
+
+## Nâng cấp MVP v2
+
+Ngày 28/10/2026: extension **0.7.0**, migrations V7/V8. Bổ sung VTT/SRT và context menu; file audio WAV/MP3/M4A/WebM → Groq STT → meeting; SSE snapshot có xác thực; thu tab audio + mic trong offscreen document; live CREATE/UPDATE/CANCEL, bản sửa người dùng có version và chốt thành task nháp để review/Trello. Audio chưa upload chỉ ở RAM của phiên thu, không bảo đảm tồn tại khi đóng Chrome. Chưa hỗ trợ system audio của ứng dụng desktop hoặc cam kết latency dưới một giây.
+
+Cấu hình mới: `GROQ_API_KEY`, `STT_MODEL` (mặc định whisper-large-v3-turbo), `AUDIO_WORKER_ENABLED` (mặc định true). Không cần key Groq để tiếp tục dùng paste/TXT/DOCX/VTT/SRT. [Đánh giá từng chặng](docs/ai-meeting-to-task/MVP_v2_Upgrade_Progress.md) · [Khởi động và checklist bản 0.7](docs/ai-meeting-to-task/MVP_v2_Test_Guide.md). Bản này có 93 backend unit tests và 69 tests client/build đạt; xem nhật ký bước 36 cho kết quả cuối. DB integration mới bị sandbox chặn socket, chưa xác minh V7/V8/Chrome capture/API Groq thật.
+
+## Microservice Meeting Intelligence
+
+[Hướng dẫn chạy, hợp đồng API, benchmark và đánh giá](meeting-intelligence-service/README.md). Dịch vụ Python nhận diện tiếng Việt qua REST/WebSocket và phân tích transcript qua Gemini. Đặt `INTELLIGENCE_STT_URL` và `INTELLIGENCE_API_KEY` ở Spring Boot để các phiên audio mới dùng dịch vụ này. Extension tiếp tục gửi file hoặc các đoạn thu qua Spring Boot.
 
 ## Chrome Extension
 

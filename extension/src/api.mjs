@@ -44,6 +44,19 @@ export function createApi(origin, { fetchImpl = fetch, onUnauthorized = async ()
   }
   const meetingPath = (id) => `/api/v1/meetings/${encodeURIComponent(id)}`;
   return {
+    captures: token => request('/api/v1/captures', { token }),
+    captureConfig: token => request('/api/v1/captures/config', { token }),
+    createCapture: (token, input, key) => request('/api/v1/captures', { method: 'POST', token, json: input, idempotencyKey: key }),
+    capture: (token, id) => request(`/api/v1/captures/${encodeURIComponent(id)}`, { token }),
+    uploadAudio: (token, id, sequence, startMs, file) => {
+      const form = new FormData(); form.append('file', file, file.name ?? 'audio.wav');
+      return request(`/api/v1/captures/${encodeURIComponent(id)}/chunks/${sequence}?startMs=${startMs}`, { method: 'POST', token, form });
+    },
+    stopCapture: (token, id, chunkCount) => request(`/api/v1/captures/${encodeURIComponent(id)}/stop`, { method: 'POST', token, json: { chunkCount } }),
+    cancelCapture: (token, id) => request(`/api/v1/captures/${encodeURIComponent(id)}/cancel`, { method: 'POST', token }),
+    retryCapture: (token, id) => request(`/api/v1/captures/${encodeURIComponent(id)}/retry`, { method: 'POST', token }),
+    editLiveDraft: (token, id, input) => request(`/api/v1/captures/${encodeURIComponent(id)}/drafts`, { method: 'PATCH', token, json: input }),
+    publishCapture: (token, id) => request(`/api/v1/captures/${encodeURIComponent(id)}/publish`, { method: 'POST', token }),
     health: () => request('/actuator/health'),
     register: (input) => request('/api/v1/auth/register', { method: 'POST', json: input }),
     login: (input) => request('/api/v1/auth/login', { method: 'POST', json: input }),

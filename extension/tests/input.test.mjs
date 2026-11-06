@@ -27,9 +27,9 @@ test('password enforces UTF-8 byte limit, not just character count', () => {
   assert.throws(() => validateCredentials('a@example.com', '😀'.repeat(19)), /72 byte/);
 });
 
-test('manifest only grants backend host, storage and sidePanel; production forbids plain HTTP', () => {
+test('manifest only grants backend host, storage, sidePanel and contextMenus; production forbids plain HTTP', () => {
   const manifest = extensionManifest('https://api.example.com');
-  assert.deepEqual(manifest.permissions, ['storage', 'sidePanel']);
+  assert.deepEqual(manifest.permissions, ['storage', 'sidePanel', 'contextMenus', 'tabCapture', 'offscreen', 'activeTab']);
   assert.deepEqual(manifest.host_permissions, ['https://api.example.com/*']);
   assert.equal(manifest.content_scripts, undefined);
   assert.match(manifest.content_security_policy.extension_pages, /connect-src https:\/\/api.example.com/);

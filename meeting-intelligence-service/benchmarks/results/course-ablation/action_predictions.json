@@ -1,0 +1,385 @@
+{
+  "run": {
+    "provider": "gemini",
+    "split": "all",
+    "datasetVersion": "seed-v1",
+    "startedAt": "2026-11-06T22:22:28+0700",
+    "model": "gemini-3.5-flash-lite",
+    "promptVersion": "meeting-events-v1-gemini-text-v1",
+    "schemaVersion": "meeting-events-v1"
+  },
+  "items": [
+    {
+      "id": "vi-01-single",
+      "meetingId": "3ea425ec-a2d8-40fb-88ed-3bf0370f28a1",
+      "status": "COMPLETED",
+      "error": null,
+      "wallMs": 2628,
+      "model": "gemini-3.5-flash-lite",
+      "promptVersion": "meeting-events-v1-gemini-text-v1",
+      "schemaVersion": "meeting-events-v1",
+      "chunks": 1,
+      "tasks": [
+        {
+          "name": "sửa lỗi đăng nhập",
+          "assignee": "Long",
+          "deadline_raw": "trước thứ Sáu",
+          "due_local": null,
+          "priority": null,
+          "evidence_lines": [
+            1
+          ]
+        }
+      ],
+      "latencyMs": 1172,
+      "inputTokens": 799,
+      "outputTokens": 185
+    },
+    {
+      "id": "vi-02-no-task",
+      "meetingId": "d9c2efc5-6faf-4c9d-9762-53b1a5c06455",
+      "status": "COMPLETED",
+      "error": null,
+      "wallMs": 1553,
+      "model": "gemini-3.5-flash-lite",
+      "promptVersion": "meeting-events-v1-gemini-text-v1",
+      "schemaVersion": "meeting-events-v1",
+      "chunks": 1,
+      "tasks": [],
+      "latencyMs": 645,
+      "inputTokens": 967,
+      "outputTokens": 4
+    },
+    {
+      "id": "vi-03-correction",
+      "meetingId": "8fea22b5-4066-4730-8798-c6bab13eb7ee",
+      "status": "COMPLETED",
+      "error": null,
+      "wallMs": 2081,
+      "model": "gemini-3.5-flash-lite",
+      "promptVersion": "meeting-events-v1-gemini-text-v1",
+      "schemaVersion": "meeting-events-v1",
+      "chunks": 1,
+      "tasks": [
+        {
+          "name": "làm màn hình login",
+          "assignee": "Mai",
+          "deadline_raw": null,
+          "due_local": null,
+          "priority": null,
+          "evidence_lines": [
+            1,
+            3
+          ]
+        }
+      ],
+      "latencyMs": 1177,
+      "inputTokens": 960,
+      "outputTokens": 253
+    },
+    {
+      "id": "vi-04-cancel",
+      "meetingId": "faf85ecc-104e-47f5-8074-fd91ce32676d",
+      "status": "FAILED",
+      "error": "PROVIDER_RESPONSE_INVALID",
+      "wallMs": 3624,
+      "model": "gemini-3.5-flash-lite",
+      "promptVersion": "meeting-events-v1-gemini-text-v1",
+      "schemaVersion": "meeting-events-v1",
+      "chunks": 1,
+      "tasks": []
+    },
+    {
+      "id": "en-01-basic",
+      "meetingId": "84771f95-5f20-4aff-92f3-9b6e33e77906",
+      "status": "COMPLETED",
+      "error": null,
+      "wallMs": 2581,
+      "model": "gemini-3.5-flash-lite",
+      "promptVersion": "meeting-events-v1-gemini-text-v1",
+      "schemaVersion": "meeting-events-v1",
+      "chunks": 1,
+      "tasks": [
+        {
+          "name": "update the pricing page",
+          "assignee": "Tom",
+          "deadline_raw": "Wednesday",
+          "due_local": null,
+          "priority": null,
+          "evidence_lines": [
+            1
+          ]
+        },
+        {
+          "name": "send the release notes",
+          "assignee": "Lisa",
+          "deadline_raw": "tomorrow",
+          "due_local": null,
+          "priority": null,
+          "evidence_lines": [
+            3
+          ]
+        }
+      ],
+      "latencyMs": 1823,
+      "inputTokens": 951,
+      "outputTokens": 389
+    },
+    {
+      "id": "vi-05-missing-metadata",
+      "meetingId": "41e1e6e3-dea1-49bc-9eac-38a0f3231228",
+      "status": "COMPLETED",
+      "error": null,
+      "wallMs": 3107,
+      "model": "gemini-3.5-flash-lite",
+      "promptVersion": "meeting-events-v1-gemini-text-v1",
+      "schemaVersion": "meeting-events-v1",
+      "chunks": 1,
+      "tasks": [
+        {
+          "name": "gửi báo cáo doanh thu",
+          "assignee": "Mai",
+          "deadline_raw": "ngày mai",
+          "due_local": null,
+          "priority": null,
+          "evidence_lines": [
+            1
+          ]
+        }
+      ],
+      "latencyMs": 2177,
+      "inputTokens": 789,
+      "outputTokens": 198
+    },
+    {
+      "id": "vi-06-priority",
+      "meetingId": "664b3ea0-71b8-4b5b-b2d6-57b697f7fae3",
+      "status": "COMPLETED",
+      "error": null,
+      "wallMs": 2057,
+      "model": "gemini-3.5-flash-lite",
+      "promptVersion": "meeting-events-v1-gemini-text-v1",
+      "schemaVersion": "meeting-events-v1",
+      "chunks": 1,
+      "tasks": [
+        {
+          "name": "sửa Payment API",
+          "assignee": null,
+          "deadline_raw": null,
+          "due_local": null,
+          "priority": "HIGH",
+          "evidence_lines": [
+            1
+          ]
+        }
+      ],
+      "latencyMs": 1149,
+      "inputTokens": 864,
+      "outputTokens": 161
+    },
+    {
+      "id": "vi-07-duplicate-names",
+      "meetingId": "d172003c-ab69-47f2-bc8a-2662ef7a5080",
+      "status": "COMPLETED",
+      "error": null,
+      "wallMs": 2578,
+      "model": "gemini-3.5-flash-lite",
+      "promptVersion": "meeting-events-v1-gemini-text-v1",
+      "schemaVersion": "meeting-events-v1",
+      "chunks": 1,
+      "tasks": [
+        {
+          "name": "cập nhật sơ đồ cơ sở dữ liệu",
+          "assignee": "Long",
+          "deadline_raw": "15:00 ngày 08/10/2026",
+          "due_local": "2026-10-08T15:00",
+          "priority": null,
+          "evidence_lines": [
+            1
+          ]
+        },
+        {
+          "name": "review pull request của nhóm backend",
+          "assignee": "Mai",
+          "deadline_raw": null,
+          "due_local": null,
+          "priority": null,
+          "evidence_lines": [
+            2
+          ]
+        }
+      ],
+      "latencyMs": 1311,
+      "inputTokens": 878,
+      "outputTokens": 365
+    },
+    {
+      "id": "vi-08-noise",
+      "meetingId": "08713ec1-d481-43fc-9670-1a8fa4ba1c0d",
+      "status": "COMPLETED",
+      "error": null,
+      "wallMs": 2080,
+      "model": "gemini-3.5-flash-lite",
+      "promptVersion": "meeting-events-v1-gemini-text-v1",
+      "schemaVersion": "meeting-events-v1",
+      "chunks": 1,
+      "tasks": [
+        {
+          "name": "lỗi upload ảnh",
+          "assignee": "Mai",
+          "deadline_raw": "trong tuần này",
+          "due_local": null,
+          "priority": null,
+          "evidence_lines": [
+            3
+          ]
+        }
+      ],
+      "latencyMs": 978,
+      "inputTokens": 1025,
+      "outputTokens": 204
+    },
+    {
+      "id": "vi-09-idea-not-task",
+      "meetingId": "29874beb-fb44-4974-a479-56bc83724fbf",
+      "status": "COMPLETED",
+      "error": null,
+      "wallMs": 1547,
+      "model": "gemini-3.5-flash-lite",
+      "promptVersion": "meeting-events-v1-gemini-text-v1",
+      "schemaVersion": "meeting-events-v1",
+      "chunks": 1,
+      "tasks": [],
+      "latencyMs": 635,
+      "inputTokens": 910,
+      "outputTokens": 4
+    },
+    {
+      "id": "en-02-timestamps",
+      "meetingId": "52d1c736-17a3-418e-8b7e-2f03a756d0f4",
+      "status": "COMPLETED",
+      "error": null,
+      "wallMs": 2058,
+      "model": "gemini-3.5-flash-lite",
+      "promptVersion": "meeting-events-v1-gemini-text-v1",
+      "schemaVersion": "meeting-events-v1",
+      "chunks": 1,
+      "tasks": [
+        {
+          "name": "migrate the staging database",
+          "assignee": "Lisa",
+          "deadline_raw": "Friday",
+          "due_local": null,
+          "priority": null,
+          "evidence_lines": [
+            1,
+            3
+          ]
+        }
+      ],
+      "latencyMs": 1280,
+      "inputTokens": 932,
+      "outputTokens": 299
+    },
+    {
+      "id": "vi-10-injection",
+      "meetingId": "65be7898-6f90-4f86-9fe8-1d991363d654",
+      "status": "COMPLETED",
+      "error": null,
+      "wallMs": 2068,
+      "model": "gemini-3.5-flash-lite",
+      "promptVersion": "meeting-events-v1-gemini-text-v1",
+      "schemaVersion": "meeting-events-v1",
+      "chunks": 1,
+      "tasks": [
+        {
+          "name": "cập nhật hợp đồng với khách",
+          "assignee": "Nam",
+          "deadline_raw": "trước thứ Năm",
+          "due_local": null,
+          "priority": null,
+          "evidence_lines": [
+            2
+          ]
+        }
+      ],
+      "latencyMs": 908,
+      "inputTokens": 875,
+      "outputTokens": 198
+    },
+    {
+      "id": "vi-11-self-commitment",
+      "meetingId": "bc3b97c9-69af-44c8-a7a6-346e4bbb5654",
+      "status": "COMPLETED",
+      "error": null,
+      "wallMs": 2594,
+      "model": "gemini-3.5-flash-lite",
+      "promptVersion": "meeting-events-v1-gemini-text-v1",
+      "schemaVersion": "meeting-events-v1",
+      "chunks": 1,
+      "tasks": [
+        {
+          "name": "viết test cho module thanh toán",
+          "assignee": "Em",
+          "deadline_raw": null,
+          "due_local": null,
+          "priority": null,
+          "evidence_lines": [
+            1
+          ]
+        },
+        {
+          "name": "phần thiết kế email thông báo",
+          "assignee": "Mai",
+          "deadline_raw": "trong hôm nay",
+          "due_local": null,
+          "priority": null,
+          "evidence_lines": [
+            2,
+            3
+          ]
+        }
+      ],
+      "latencyMs": 1303,
+      "inputTokens": 914,
+      "outputTokens": 404
+    },
+    {
+      "id": "vi-12-long",
+      "meetingId": "9f67f3ff-f533-4f5a-b94f-e6b14037e152",
+      "status": "COMPLETED",
+      "error": null,
+      "wallMs": 3093,
+      "model": "gemini-3.5-flash-lite",
+      "promptVersion": "meeting-events-v1-gemini-text-v1",
+      "schemaVersion": "meeting-events-v1",
+      "chunks": 1,
+      "tasks": [
+        {
+          "name": "làm màn hình login",
+          "assignee": "Mai",
+          "deadline_raw": null,
+          "due_local": null,
+          "priority": null,
+          "evidence_lines": [
+            1,
+            124
+          ]
+        },
+        {
+          "name": "chuẩn bị số liệu báo cáo quý",
+          "assignee": "Mai",
+          "deadline_raw": null,
+          "due_local": null,
+          "priority": null,
+          "evidence_lines": [
+            3
+          ]
+        }
+      ],
+      "latencyMs": 2138,
+      "inputTokens": 8561,
+      "outputTokens": 658
+    }
+  ]
+}

@@ -9,8 +9,8 @@ export default defineConfig({
   build: {
     target: 'chrome116',
     rollupOptions: {
-      input: { panel: 'sidepanel.html', 'service-worker': 'src/service-worker.mjs' },
-      output: { entryFileNames: (chunk) => chunk.name === 'service-worker' ? 'service-worker.js' : 'assets/[name]-[hash].js' },
+      input: { panel: 'sidepanel.html', offscreen: 'offscreen.html', microphone: 'microphone.html', 'service-worker': 'src/service-worker.mjs', 'pcm-processor': 'src/pcm-processor.mjs' },
+      output: { entryFileNames: (chunk) => ['service-worker', 'pcm-processor'].includes(chunk.name) ? `${chunk.name}.js` : 'assets/[name]-[hash].js' },
     },
   },
   plugins: [{

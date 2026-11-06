@@ -1,0 +1,35 @@
+services:
+  ai-transcription-service:
+    image: aimtt/meeting-intelligence:local
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      MODEL_NAME: ${MODEL_NAME:-deepdml/faster-whisper-large-v3-turbo-ct2}
+      DEVICE: cuda
+      COMPUTE_TYPE: ${COMPUTE_TYPE:-float16}
+      INTELLIGENCE_API_KEY: ${INTELLIGENCE_API_KEY:?Set INTELLIGENCE_API_KEY in .env}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash-lite}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - model_cache:/app/models_cache
+    healthcheck:
+      test: ["CMD", "python3", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10m
+      retries: 4
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  model_cache:

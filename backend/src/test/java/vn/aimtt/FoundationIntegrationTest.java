@@ -35,6 +35,25 @@ class FoundationIntegrationTest {
     @Autowired ObjectMapper json;
     @Autowired JdbcTemplate jdbc;
 
+    @Test void subtitleUploadsPersistCueSourceAndRemainOwnerScoped() throws Exception {
+        String owner = registerAndLogin(newEmail()), other = registerAndLogin(newEmail());
+        for (String suffix : java.util.List.of("vtt", "srt")) {
+            String body = suffix.equals("vtt") ? "WEBVTT\n\n00:01.250 --> 00:03.500\n<v Nam>Mai làm API.</v>"
+                    : "1\n00:00:01,250 --> 00:00:03,500\nMai làm API.";
+            var upload = new MockMultipartFile("file", "meeting." + suffix, "application/octet-stream", body.getBytes(StandardCharsets.UTF_8));
+            var response = mvc.perform(multipart("/api/v1/meetings").file(upload).header("Authorization", bearer(owner)))
+                    .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+            var meeting = json.readTree(response); String id = meeting.path("meetingId").asText();
+            assertThat(jdbc.queryForObject("select source_type from transcript_revisions where meeting_id = ?", String.class, UUID.fromString(id)))
+                    .isEqualTo(suffix.toUpperCase());
+            mvc.perform(get("/api/v1/meetings/{id}/transcript", id).header("Authorization", bearer(owner)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.segments[0].timestamp").value("00:00:01.250"))
+                    .andExpect(jsonPath("$.segments[0].sourceLocator.endMs").value(3500))
+                    .andExpect(jsonPath("$.segments[0].sourceText").value(suffix.equals("vtt") ? "<v Nam>Mai làm API.</v>" : "Mai làm API."));
+            mvc.perform(get("/api/v1/meetings/{id}/transcript", id).header("Authorization", bearer(other))).andExpect(status().isNotFound());
+        }
+    }
+
     @Test void migrationAndAuthenticationLifecycle() throws Exception {
         int migrations = new org.springframework.core.io.support.PathMatchingResourcePatternResolver().getResources("classpath:db/migration/V*.sql").length;
         assertThat(migrations).isGreaterThanOrEqualTo(5);

@@ -349,3 +349,48 @@ Kết quả chặng 14.1 dưới đây là của lượt triển khai trước. 
 - Ngày 10/10: tạo Directory_Tree.md từ danh sách file hiện có, chú thích riêng 192 file nguồn/cấu hình/test/tài liệu, bao gồm chính tài liệu mới. Đối chiếu các class, API, export và script; phân biệt production/test/demo.
 - Bổ sung bảng file cục bộ/build/cache, giải thích Controller/Service/Store/Worker/Provider và bản đồ file theo luồng nhập, phân tích, review, tạo card, retention. Ghi rõ manifest được sinh khi build; GeminiSchema chỉ còn dùng trong test tương thích; chưa có module ghi âm/STT.
 - Kiểm tra mọi file trong phạm vi đều có mô tả, cấu trúc theo đường dẫn thật và diff whitespace. Chỉ sửa tài liệu, không chạy lại tests ứng dụng hoặc đọc giá trị .env. README có liên kết đến cây thư mục.
+
+
+## Bước 31 MVP v2 chặng 1 — phụ đề VTT/SRT và context menu
+
+- Ngày 28/10/2026, theo yêu cầu triển khai lần lượt và đánh giá từng bước. Kế hoạch 5 chặng và đánh giá nằm trong MVP_v2_Upgrade_Progress.md.
+- Backend: SubtitleParser đọc VTT/SRT UTF-8, multiline cue, voice tag, entity thông dụng, timestamp mili giây/start-end; giữ raw offsets/cue ID và locator. Cho phép overlap, từ chối cue lỗi/đảo thời gian thay vì nhập thiếu. Speaker chỉ lấy từ metadata VTT, không đoán từ SRT. V7 mở source_type cho VTT/SRT, không sửa V1 hoặc parser DOCX cũ.
+- Extension 0.6.0: chọn VTT/SRT khi upload; contextMenus đưa text vào trusted session storage gắn account/backend/session, hạn dùng 10 phút. Gọi open panel ngay trong user gesture trước await. Có preview và nút Dùng cho meeting mới; kiểm tra bỏ draft chưa lưu; không tự save/AI hoặc ghi đè meeting. Không lấy URL/DOM, không thêm quyền host rộng. Logout xóa đoạn chờ. Chưa có audio/STT/SSE.
+- Kiểm tra thực tế: Maven offline chạy toàn bộ unit và package: **85 tests, 0 fail/error/skip, BUILD SUCCESS**. Extension npm run check: **64/64 tests, Vite build và MV3 checks đạt**. Có test mới cho source offsets/malformed/encoding/limits, selection scope/expiry/user gesture và upload phụ đề.
+- Đã viết integration test upload/lưu/đọc phụ đề và owner isolation. Chạy riêng test đó bị `SocketException: Operation not permitted` lúc TestDatabase khởi tạo PostgreSQL, trước assertions; Docker socket cũng bị sandbox chặn. Không xác nhận migration V7 hoặc DB integration đã pass, không gọi AI/Trello thật.
+- Đánh giá: code chặng 1 hoàn thành, thêm đầu vào và tiện ích trình duyệt trên nền pipeline cũ. Cần restart backend để migrate V7, Reload extension 0.6.0 và chạy checklist Chrome/DB local trong guide trước khi xác nhận runtime. Hai file mẫu có trong docs/ai-meeting-to-task/samples. Chặng tiếp theo: upload audio/STT có giới hạn và job bền; SSE/live còn ở lộ trình.
+
+
+## Bước 32 MVP v2 chặng 2 — file audio và STT
+
+- Theo yêu cầu làm tất cả các chặng, ngày 28/10/2026. Module capture + V8 giữ session/queue BYTEA/checksum/lease/checkpoint; nhận WAV/MP3/M4A/WebM tối đa 10 MiB. Adapter Groq STT verbose_json với key backend, kiểm tra timestamps/duration/response. Signature chỉ là kiểm tra container ban đầu, provider còn phải giải mã.
+- File STT → READY → publish meeting AUDIO, sau đó phân tích/review/Trello như cũ. Sau checkpoint xóa bytes audio; phiên tạm có TTL 24 giờ, dọn bởi audio worker/retention. Lỗi không tự gọi lại API, STT checkpoint dùng lại khi LLM lỗi.
+- Đánh giá: code mở được nguồn ghi âm có job bền và owner isolation. Chưa xác minh Groq thật, chất lượng tiếng Việt/âm nhiễu hoặc thời lượng/chi phí thực tế. Key readiness không chứng minh quota. Tests và giới hạn runtime ghi ở bước 36.
+
+## Bước 33 MVP v2 chặng 3 — SSE trạng thái đã lưu
+
+- SnapshotStreams/StreamController phát snapshot capture/job và candidate tạm từ chunk đã validate. Fetch SSE dùng Bearer header, owner check, kiểm tra JWT/session trong luồng, heartbeat, giới hạn kết nối, close/reconnect và cleanup. Không đưa key/token vào URL. Client parse frame/UTF-8 phân mảnh, bounded buffer/reconnect; job vẫn có polling fallback.
+- Đánh giá: cải thiện phản hồi và khôi phục view mà không chuyển job sang bộ nhớ của panel. Chủ đích stream kết quả hợp lệ theo checkpoint, không native LLM token/raw NDJSON. File ngắn còn đợi một lần AI hoàn tất mới có task; không hứa <1s. Chưa chạy SSE HTTP thật trong môi trường này.
+
+## Bước 34 MVP v2 chặng 4 — tab audio + mic
+
+- Extension 0.7.0 thêm tabCapture/offscreen/activeTab. Offscreen + AudioWorklet thu PCM, tạo WAV mono 16kHz độc lập mỗi khoảng 15 giây, phát lại tab audio để người dùng vẫn nghe, không monitor mic. Trang microphone.html cấp quyền bằng thao tác người dùng rồi dừng, không upload thử.
+- Gửi tuần tự, giữ queue RAM có giới hạn, sequence/checksum dedup; lỗi mạng/auth/backpressure dừng thu và giữ đoạn chờ. Stop đóng tracks, flush phần cuối, drain queue rồi gửi chunkCount. Panel đóng không sở hữu media/job; browser đóng/reload có thể mất audio chưa gửi. Có chốt phạm vi backend đã nhận kèm xác nhận.
+- Đánh giá: có code capture lifecycle và định dạng độc lập từng đoạn. Chỉ tab Chrome, chưa system audio desktop. Cần test Mac/Chrome/microphone/echo/cắt câu thực; chưa đo chất lượng resampling. Giới hạn hai giờ/480 đoạn/queue8; có thể chặn sớm hơn bởi budget.
+
+## Bước 35 MVP v2 chặng 5 — incremental, bản sửa và finalize
+
+- Worker STT xong từng đoạn → LLM với nguồn mới/known_tasks, CREATE/UPDATE/CANCEL, validator cũ và nguồn UUID thật. Persist trước khi SSE đọc; cap 100 events/200k chars/result size. Có usage response LLM và latency tích lũy; thiếu token giữ null, không tính STT hoặc response mất.
+- Bản sửa live lưu overrides tách AI; PATCH expectedVersion, chỉ trường người dùng thực sự sửa được gửi. 409 không tự retry; form có lựa chọn giữ bản sửa với version mới. Không publish khi còn form chưa lưu. AI CANCEL không bị override làm sống lại.
+- Finalize đợi READY, tạo meeting/source AUDIO, ánh xạ evidence sang UUID DB mới, tạo analysis COMPLETED/tasks + áp dụng override trong transaction; publish lặp trả cùng meeting. Chưa tự tạo card; dùng review/approve-and-sync cũ.
+- Thêm list phiên owner-scoped để tìm lại khi response create bị mất trước khi pointer local được lưu. Control media kiểm tra session ID để không dừng nhầm phiên khi chuyển view.
+- Đánh giá: đã có logic cập nhật/hủy, giữ user edits và chốt an toàn. Chất lượng task_ref/corrections và luồng từ audio tới Trello thật chưa đo; cần test guide.
+
+## Bước 36 Xác minh và bàn giao MVP v2 0.7.0
+
+- Backend: `mvnw -o -B -Dtest=*Test,!*IntegrationTest package` — **93 unit tests, 0 fail/error/skip**, JAR build đạt. Unit mới kiểm tra STT response/timestamp/lỗi/redaction/signature, checkpoint trước LLM, resume không gọi lại STT và chặn output/budget sai. Test compile gồm integration mới, không đồng nghĩa đã chạy integration.
+- Client: `npm run check` — **69 tests đạt**, Vite build + MV3 verified, artifact có offscreen/microphone/PCM worklet. Tests mới kiểm tra WAV độc lập, SSE frame/heartbeat/Bearer/auth expiry, không retry write và override chỉ trường thực sự sửa.
+- E2E build script đã build bundle mới thành công trong /tmp/aimtt-v2-e2e-build. Chỉ xác minh build; không chạy browser E2E mới.
+- Bốn CaptureIntegrationTest đã viết cho file dedup/owner/source, live override/version/finalize, CANCEL phần sau và thiếu phần cuối/cancel. Chạy bị `SocketException: Operation not permitted` lúc khởi tạo TestDatabase trước assertions. Không tính pass; migration V7/V8 và transaction publish chưa xác minh runtime trong sandbox.
+- Không gọi API trả phí, không đọc/đổi .env, không ghi card thật từ agent. Chrome capture/mic, SSE HTTP thật, Groq/LLM/Trello từ audio/live cần kiểm tra local theo MVP_v2_Test_Guide.md. Không tuyên bố hoàn tất nghiệm thu hay production.
+- Tài liệu: MVP_v2_Upgrade_Progress (đánh giá từng chặng), MVP_v2_Test_Guide (setup/checklist), README/API/Directory_Tree/Context được cập nhật. Code đủ các chặng trong phạm vi tab Chrome; không hứa mọi desktop app/latency dưới một giây hoặc diarization chính xác.

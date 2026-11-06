@@ -12,8 +12,8 @@ export function pastePayload(draft, expectedVersion) {
   return input;
 }
 export function validateFile(file) {
-  if (!file) throw new Error('Chọn một file TXT hoặc DOCX.');
-  if (!/\.(txt|docx)$/i.test(file.name)) throw new Error('Chỉ hỗ trợ TXT UTF-8 và DOCX.');
+  if (!file) throw new Error('Chọn một file TXT, DOCX, VTT hoặc SRT.');
+  if (!/\.(txt|docx|vtt|srt)$/i.test(file.name)) throw new Error('Chỉ hỗ trợ TXT, VTT, SRT UTF-8 và DOCX.');
   if (file.size > MAX_FILE) throw new Error('File vượt 10 MiB.');
 }
 export function validateCredentials(email, password) {

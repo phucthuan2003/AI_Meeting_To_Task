@@ -45,13 +45,19 @@ public class TranscriptParser {
         String mime = Optional.ofNullable(file.getContentType()).orElse("").toLowerCase(Locale.ROOT);
         boolean txt = name.endsWith(".txt");
         boolean docx = name.endsWith(".docx");
-        if (!txt && !docx) throw unsupported();
-        Set<String> accepted = txt ? Set.of("text/plain", "application/octet-stream", "")
+        boolean vtt = name.endsWith(".vtt"), srt = name.endsWith(".srt");
+        if (!txt && !docx && !vtt && !srt) throw unsupported();
+        Set<String> accepted = vtt || srt ? Set.of("text/vtt", "application/x-subrip", "text/srt", "text/plain", "application/octet-stream", "") : txt ? Set.of("text/plain", "application/octet-stream", "")
                 : Set.of(DOCX_MIME, "application/octet-stream", "");
         if (!accepted.contains(mime)) throw unsupported();
         try (var input = file.getInputStream()) {
             byte[] bytes = input.readNBytes(Math.toIntExact(limits.maxUploadBytes() + 1));
             if (bytes.length > limits.maxUploadBytes()) throw tooLarge("FILE_TOO_LARGE", "File vượt giới hạn.");
+            if (vtt || srt) {
+                String text = decodeUtf8(bytes);
+                checkTextSize(text.length());
+                return SubtitleParser.parse(text, vtt, limits.maxExtractedChars());
+            }
             if (txt) {
                 String text = decodeUtf8(bytes);
                 checkTextSize(text.length());
@@ -70,7 +76,7 @@ public class TranscriptParser {
             if (text.indexOf('\0') >= 0) throw invalidFile();
             return text;
         } catch (CharacterCodingException e) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_ENCODING", "Chuyển file TXT sang UTF-8.");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_ENCODING", "Chuyển file văn bản/phụ đề sang UTF-8.");
         }
     }
 
@@ -205,6 +211,6 @@ public class TranscriptParser {
     }
     private ApiException tooLarge(String code, String message) { return new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, code, message); }
     private ApiException zipLimit() { return tooLarge("DOCX_ZIP_LIMIT", "DOCX vượt giới hạn giải nén."); }
-    private ApiException unsupported() { return new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "INVALID_FILE_TYPE", "Dùng file .txt hoặc .docx hợp lệ."); }
+    private ApiException unsupported() { return new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "INVALID_FILE_TYPE", "Dùng file .txt, .docx, .vtt hoặc .srt hợp lệ."); }
     private ApiException invalidFile() { return new ApiException(HttpStatus.BAD_REQUEST, "INVALID_FILE", "File hỏng, mã hóa hoặc không đúng cấu trúc."); }
 }

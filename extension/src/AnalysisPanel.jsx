@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ErrorNotice } from './components.jsx';
 import { assertJobSnapshot, isActiveJob, pollJob } from './jobs.mjs';
 import ReviewPanel from './ReviewPanel.jsx';
+import { watchSnapshots } from './streams.mjs';
+import { createStorage } from './storage.mjs';
 
 const statusLabels = {
   QUEUED: 'Đang chờ worker', PROCESSING: 'Đang xử lý', CANCEL_REQUESTED: 'Đang yêu cầu hủy',
@@ -37,6 +39,7 @@ export function AnalysisJobStatus({ job, segmentCount }) {
 }
 
 export default function AnalysisPanel({ api, token, meeting, onActivity, onReviewDirty, disabled, onReload }) {
+  const [provisional, setProvisional] = useState([]);
   const [policies, setPolicies] = useState([]);
   const [selectedProvider, setSelectedProvider] = useState('');
   const [job, setJob] = useState(null);
@@ -95,6 +98,16 @@ export default function AnalysisPanel({ api, token, meeting, onActivity, onRevie
     };
   }, [api, token, meeting.meetingId, meeting.transcriptRevision, meeting.inputVersion, meeting.currentAnalysisJobId, onActivity]);
 
+  useEffect(() => {
+    if (!job?.jobId || !isActiveJob(job)) { setProvisional([]); return; }
+    const stream = watchSnapshots(__API_ORIGIN__, `/api/v1/jobs/${job.jobId}/events`, token, {
+      onUnauthorized: failed => createStorage(chrome.storage,__API_ORIGIN__).clearSession(failed),
+      onSnapshot: snapshot => { if (snapshot.job.jobId === job.jobId) { accept(snapshot.job); setProvisional(snapshot.provisional ?? []); } },
+      onError: () => {}, // bounded GET polling remains available as a fallback
+    });
+    return () => stream.stop();
+  }, [job?.jobId, isActiveJob(job), token]);
+
   async function action(request) {
     if (working || disabled || loading) return;
     const current = generation.current;
@@ -126,6 +139,10 @@ export default function AnalysisPanel({ api, token, meeting, onActivity, onRevie
     <ErrorNotice error={error} />
     {pollNote && <p className="small muted">{pollNote}</p>}
     {pendingStart.current && !working && <p className="small muted">Chưa xác định yêu cầu tạo job đã được lưu hay chưa. Bấm nút tạo/phân tích để gửi lại cùng lựa chọn, hoặc tải lại meeting để kiểm tra.</p>}
+    {provisional.length > 0 && <div className="notice"><strong>Đề xuất tạm từ các phần đã xử lý</strong>
+      <p>Chưa duyệt/tạo card; câu sửa hoặc hủy ở phần sau có thể thay đổi kết quả.</p>
+      {provisional.map(task => <p key={task.taskRef}>{task.taskName} · {task.assigneeRaw || 'Chưa rõ người'}</p>)}
+    </div>}
     <AnalysisJobStatus job={job} segmentCount={meeting.segmentCount} />
     <div className="actions">
       <button className="primary" disabled={locked || active || !policy} onClick={() => {

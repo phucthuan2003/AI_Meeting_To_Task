@@ -9,5 +9,6 @@
 *.iml
 *.log
 .local/
+/.chart-data-*/
 __pycache__/
 *.py[cod]

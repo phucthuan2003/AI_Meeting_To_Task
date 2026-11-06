@@ -1,0 +1,123 @@
+{
+  "model": "base",
+  "device": "cpu",
+  "compute_type": "int8",
+  "platform": "macOS-14.6.1-arm64-arm-64bit",
+  "faster_whisper": "1.2.1",
+  "ctranslate2": "4.6.0",
+  "manifest_sha256": "c0da3078be1de53e8b41bff080c857ff0e5c89ae194da1ed2d62064168d6c33b",
+  "results": [
+    {
+      "condition": "clean",
+      "mode": "fixed",
+      "clips": 24,
+      "audio_s": 288.42,
+      "words": 676,
+      "wer": 0.6420118343195266,
+      "substitutions": 338,
+      "insertions": 53,
+      "deletions": 43,
+      "rtf": 0.3218356807641447,
+      "emission_p95_s": 2.929698041500651,
+      "windows": 197,
+      "repair_calls": 0,
+      "repairs_used": 0
+    },
+    {
+      "condition": "clean",
+      "mode": "vad",
+      "clips": 24,
+      "audio_s": 288.42,
+      "words": 676,
+      "wer": 0.514792899408284,
+      "substitutions": 278,
+      "insertions": 31,
+      "deletions": 39,
+      "rtf": 0.1298128539386976,
+      "emission_p95_s": 1.834623308899986,
+      "windows": 105,
+      "repair_calls": 0,
+      "repairs_used": 0
+    },
+    {
+      "condition": "clean",
+      "mode": "vad_repair",
+      "clips": 24,
+      "audio_s": 288.42,
+      "words": 676,
+      "wer": 0.5266272189349113,
+      "substitutions": 282,
+      "insertions": 31,
+      "deletions": 43,
+      "rtf": 0.1854541369495861,
+      "emission_p95_s": 4.598601192800225,
+      "windows": 105,
+      "repair_calls": 37,
+      "repairs_used": 34
+    },
+    {
+      "condition": "noise_10db",
+      "mode": "fixed",
+      "clips": 4,
+      "audio_s": 44.64,
+      "words": 101,
+      "wer": 0.8217821782178217,
+      "substitutions": 67,
+      "insertions": 1,
+      "deletions": 15,
+      "rtf": 0.3815580430555804,
+      "emission_p95_s": 4.919847856550009,
+      "windows": 31,
+      "repair_calls": 0,
+      "repairs_used": 0
+    },
+    {
+      "condition": "noise_10db",
+      "mode": "vad",
+      "clips": 4,
+      "audio_s": 44.64,
+      "words": 101,
+      "wer": 0.7722772277227723,
+      "substitutions": 65,
+      "insertions": 10,
+      "deletions": 3,
+      "rtf": 0.22854630465947898,
+      "emission_p95_s": 2.9993715746000102,
+      "windows": 17,
+      "repair_calls": 0,
+      "repairs_used": 0
+    },
+    {
+      "condition": "noise_10db",
+      "mode": "vad_repair",
+      "clips": 4,
+      "audio_s": 44.64,
+      "words": 101,
+      "wer": 0.7920792079207921,
+      "substitutions": 66,
+      "insertions": 11,
+      "deletions": 3,
+      "rtf": 0.26264119059137525,
+      "emission_p95_s": 5.165112281499464,
+      "windows": 17,
+      "repair_calls": 3,
+      "repairs_used": 2
+    }
+  ],
+  "paired_clean_intervals": [
+    {
+      "comparison": "vad minus fixed",
+      "wer_difference_ci95_percentage_points": [
+        -20.05946923677947,
+        -5.706111486646878
+      ]
+    },
+    {
+      "comparison": "vad_repair minus vad",
+      "wer_difference_ci95_percentage_points": [
+        0.0,
+        2.4854710898769605
+      ]
+    }
+  ]
+}

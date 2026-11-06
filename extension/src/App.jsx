@@ -4,7 +4,9 @@ import { createStorage, SESSION_KEY } from './storage.mjs';
 import { assertRevision, openSavedMeeting } from './meeting.mjs';
 import { AuthForm, ErrorNotice, History, InputForm, MeetingDetail } from './components.jsx';
 import AnalysisPanel from './AnalysisPanel.jsx';
+import AudioPanel from './AudioPanel.jsx';
 import { isActiveJob } from './jobs.mjs';
+import { SELECTION_KEY, belongsToSession } from './selection.mjs';
 
 const origin = __API_ORIGIN__;
 const storage = globalThis.chrome?.storage ? createStorage(chrome.storage, origin) : null;
@@ -23,6 +25,8 @@ export default function App() {
   const [editing, setEditing] = useState(false);
   const [jobActive, setJobActive] = useState(false);
   const [formKey, setFormKey] = useState(0);
+  const [selection, setSelection] = useState(null);
+  const [selectionInitial, setSelectionInitial] = useState(null);
   const dirty = useRef(false);
   const reviewDirty = useRef(false);
   const epoch = useRef(0);
@@ -33,7 +37,7 @@ export default function App() {
   function resetDisplay() {
     setMeeting(null); setSource(null); setHistory(null); setEditing(false);
     setJobActive(false);
-    setView('new'); setFormKey(key => key + 1); dirty.current = false;
+    setSelectionInitial(null); setView('new'); setFormKey(key => key + 1); dirty.current = false;
   }
   async function run(task, success = () => {}) {
     const generation = epoch.current;
@@ -46,7 +50,7 @@ export default function App() {
     } finally { if (generation === epoch.current) { setBusy(false); setBooting(false); } }
   }
   function canLeave() {
-    if (reviewDirty.current) return window.confirm('Còn chỉnh sửa task chưa lưu xong. Hệ thống sẽ cố lưu nốt; nếu lưu lỗi thay đổi đó sẽ mất. Tiếp tục?');
+    if (reviewDirty.current) return window.confirm('Còn chỉnh sửa task chưa lưu. Rời màn hình có thể mất phần chưa lưu. Tiếp tục?');
     return !dirty.current || window.confirm('Bạn có thay đổi chưa lưu. Bỏ thay đổi và tiếp tục?');
   }
   function applyMeeting(data) {
@@ -91,6 +95,32 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [session]);
 
+  useEffect(() => {
+    let mounted = true;
+    if (!storage) return;
+    const read = async () => {
+      const item = (await chrome.storage.session.get(SELECTION_KEY))[SELECTION_KEY];
+      if (mounted) setSelection(item?.expiresAt > Date.now() && (item.error || belongsToSession(item, session)) ? item : null);
+    };
+    const changed = (changes, area) => { if (area === 'session' && changes[SELECTION_KEY]) read().catch(setError); };
+    read().catch(setError);
+    const timer = setInterval(() => { read().catch(setError); }, 10000);
+    chrome.storage.onChanged.addListener(changed);
+    return () => { mounted = false; clearInterval(timer); chrome.storage.onChanged.removeListener(changed); };
+  }, [session]);
+  function importSelection() {
+    if (!belongsToSession(selection, session) || busy || !canLeave()) return;
+    resetDisplay();
+    setSelectionInitial({ title: '', meetingDate: '', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? '', transcriptText: selection.text });
+    dirty.current = true;
+    setNotice('Đã đưa văn bản vào bản nháp mới. Kiểm tra rồi bấm Lưu; chưa gửi tới AI.');
+    dismissSelection();
+  }
+  function dismissSelection() {
+    setSelection(null);
+    chrome.storage.session.remove(SELECTION_KEY).catch(setError);
+  }
+
   const token = session?.accessToken;
   function login(credentials, register, clearPassword) {
     run(async () => {
@@ -106,7 +136,8 @@ export default function App() {
     if (!canLeave()) return;
     run(() => api.logout(token), async () => {
       await storage.clearSession(token);
-      setAuth(null); resetDisplay();
+      await chrome.storage.session.remove(SELECTION_KEY);
+      setSelection(null); setAuth(null); resetDisplay();
       setNotice('Đã đăng xuất và thu hồi session. Meeting đã lưu vẫn còn trên backend.');
     });
   }
@@ -128,7 +159,7 @@ export default function App() {
     run(() => updating ? api.replace(token, meeting.meetingId, payload.input)
       : payload.kind === 'file' ? api.upload(token, payload.file, payload.metadata) : api.create(token, payload.input), async saved => {
       // Adopt the committed meeting before querying sources. A source-read error must not cause a second create.
-      setMeeting(saved); setSource(null); setView('meeting'); setEditing(false); dirty.current = false;
+      setSelectionInitial(null); setMeeting(saved); setSource(null); setView('meeting'); setEditing(false); dirty.current = false;
       setJobActive(false);
       setNotice('Input đã lưu trên backend. Chưa gửi đến LLM.');
       await storage.setActive(session.user.id, saved.meetingId);
@@ -146,6 +177,15 @@ export default function App() {
 
   return <main>
     <header className="app-header"><div className="brand-mark">M</div><div><h1>Meeting to Task</h1><p>Transcript → preview → công việc</p></div></header>
+    {selection && <section className="card">
+      <h3>Văn bản từ menu chuột phải</h3>
+      {selection.error ? <p className="notice">{selection.error}</p> : <>
+        <p className="small muted">{selection.text.length.toLocaleString('vi-VN')} ký tự · Chưa lưu hoặc gửi tới AI. Bản chờ hết hạn sau 10 phút.</p>
+        <pre className="transcript">{selection.text.slice(0, 1000)}</pre>
+        <button disabled={busy || booting || !session} onClick={importSelection}>Dùng cho meeting mới</button>
+      </>}
+      <button onClick={dismissSelection}>Bỏ đoạn chọn</button>
+    </section>}
     <details className="connection"><summary>Backend · {health}</summary><p className="small break">{origin}</p>
       {globalThis.chrome?.runtime?.id && <p className="small break">Origin CORS: chrome-extension://{chrome.runtime.id}</p>}
       <button disabled={busy || booting} onClick={() => run(() => api.health(), result => {
@@ -155,9 +195,10 @@ export default function App() {
     </details>
     {booting ? <p role="status">Đang khôi phục phiên…</p> : <>
       {session && <><div className="account row"><span className="small break">{session.user.email}</span><button disabled={busy} onClick={logout}>Đăng xuất</button></div>
+        <button disabled={busy} onClick={() => { if (canLeave()) { dirty.current=false; setView('audio'); setEditing(false); } }}>Ghi âm / Live</button>
         <nav aria-label="Meeting"><button disabled={busy} aria-current={view === 'new' ? 'page' : undefined} onClick={() => {
           if (!canLeave()) return;
-          dirty.current = false; setEditing(false); setFormKey(key => key + 1); setError(null); setNotice(''); setView('new');
+          setSelectionInitial(null); dirty.current = false; setEditing(false); setFormKey(key => key + 1); setError(null); setNotice(''); setView('new');
         }}>Nhập mới</button><button disabled={busy} aria-current={view === 'history' ? 'page' : undefined} onClick={() => showHistory()}>Lịch sử</button>
           {meeting && <button disabled={busy} aria-current={view === 'meeting' ? 'page' : undefined} onClick={() => { if (canLeave()) { dirty.current = false; setEditing(false); setView('meeting'); } }}>Meeting đang mở</button>}</nav></>}
       <ErrorNotice error={error} />
@@ -165,8 +206,9 @@ export default function App() {
       {notice && <p className="notice" role="status">{notice}</p>}
       {busy && <p className="small muted" role="status">Đang gửi request…</p>}
       {!session ? storage && <AuthForm busy={busy} onSubmit={login} /> : <>
-        {(view === 'new' || editing) && <InputForm key={formKey} initial={editing ? editInitial : undefined} version={editing ? meeting.inputVersion : undefined}
+        {(view === 'new' || editing) && <InputForm key={formKey} initial={editing ? editInitial : selectionInitial ?? undefined} version={editing ? meeting.inputVersion : undefined}
           busy={busy} onSave={save} onDirty={() => { dirty.current = true; }} onCancel={editing ? () => { if (canLeave()) { setEditing(false); dirty.current = false; } } : undefined} />}
+        {view === 'audio' && <AudioPanel key={session.user.id} api={api} session={session} onDirty={value=>{reviewDirty.current=value;}} onOpenMeeting={openMeeting} />}
         {view === 'history' && <History history={history} busy={busy} onRefresh={() => showHistory()} onMore={() => showHistory(history.nextCursor)} onOpen={openMeeting} />}
         {view === 'meeting' && meeting && !editing && <>
           <AnalysisPanel key={`${meeting.meetingId}:${meeting.transcriptRevision}:${meeting.inputVersion}`} api={api} token={token} meeting={meeting} onActivity={setJobActive}
@@ -188,6 +230,6 @@ export default function App() {
         }, setSource)} /></>}
       </>}
     </>}
-    <footer>AI Meeting to Task · Bản 0.5</footer>
+    <footer>AI Meeting to Task · Bản 0.7</footer>
   </main>;
 }

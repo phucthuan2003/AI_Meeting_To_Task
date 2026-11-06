@@ -231,3 +231,13 @@ Người dùng xác nhận đã tạo và kiểm tra card trên Trello thật t�
 
 
 Ngày 10/10: thêm Directory_Tree.md chú thích từng file nguồn/cấu hình/test/tài liệu (192 file tại lúc tạo), giải thích artifact sinh tự động và bản đồ đọc code. README đã liên kết. Đây là tài liệu cấu trúc, không thay đổi runtime hoặc kết quả kiểm thử.
+
+
+## MVP v2 — 28/10/2026
+
+User yêu cầu triển khai theo 5 chặng đề xuất và đánh giá mỗi chặng. Chặng 1 đã có code: VTT/SRT + context menu văn bản, extension 0.6.0, migration V7. 85 unit/package backend và 64 tests/Vite/MV3 đạt. Integration subtitle bị sandbox chặn socket PostgreSQL trước assertions, Chrome thật chưa test. Hướng dẫn/kế hoạch/đánh giá trong MVP_v2_Upgrade_Progress.md; mẫu VTT/SRT ở samples/. Chưa triển khai audio/STT, SSE, tab audio/mic hoặc live incremental. Giữ job/version/evidence/idempotency/Trello UNKNOWN hiện có. Không cam kết system audio mọi OS, latency <1 giây hoặc speaker chắc chắn. Chặng kế: audio upload/STT → SSE → capture prototype → incremental có bảo vệ user edits và finalize.
+
+
+## MVP v2 đã triển khai đủ chặng code — 28/10/2026
+
+User yêu cầu làm tất cả. Extension 0.7.0, V8: capture FILE/LIVE, Groq STT, queue/lease/checkpoint, SSE snapshot authenticated, offscreen tabCapture+mic+PCM WAV15s, incremental CREATE/UPDATE/CANCEL và override/version, finalize sang meeting/task review. List phiên owner-scoped hỗ trợ recover create mất response. Chỉ giữ user-edited fields, không tự ghi Trello. File STT cần publish meeting rồi phân tích; live finalize giữ proposals/evidence và overrides, không reanalyse toàn bộ. Key GROQ_API_KEY ở backend, không sửa .env. 93 unit/backend package + 69 client/Vite/MV3 đạt; E2E bundler build đạt nhưng không chạy browser mới. Bốn integration Capture tests bị sandbox chặn PostgreSQL socket trước assertions; runtime DB/Chrome/STT thật/SSE HTTP/Trello từ live chưa xác minh. Chi tiết đánh giá từng chặng ở MVP_v2_Upgrade_Progress.md; chạy local theo MVP_v2_Test_Guide.md. Không nhầm bản code với production/benchmark thành công. Không native raw NDJSON token stream; SSE phát checkpoint đã validate. Chưa system audio desktop, diarization hoặc bảo đảm không mất audio RAM khi Chrome đóng.

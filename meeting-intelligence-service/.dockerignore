@@ -1,0 +1,7 @@
+.env*
+.venv/
+models_cache/
+benchmarks/results/
+__pycache__/
+**/__pycache__/
+tests/
