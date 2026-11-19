@@ -7,7 +7,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record LlmProperties(Credentials openai, Credentials gemini, Duration requestTimeout,
                             int maxInputBytes, int maxOutputTokens) {
     public record Credentials(String apiKey, String model) {
-        public boolean configured() { return apiKey != null && !apiKey.isBlank(); }
+        public java.util.List<String> apiKeys() {
+            if (apiKey == null || apiKey.isBlank()) return java.util.List.of();
+            return java.util.Arrays.stream(apiKey.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+        }
+        public boolean configured() { return !apiKeys().isEmpty(); }
         @Override public String toString() { return "Credentials[model=" + model + ", configured=" + configured() + "]"; }
     }
     public LlmProperties {
@@ -18,8 +25,10 @@ public record LlmProperties(Credentials openai, Credentials gemini, Duration req
         for (var credentials : java.util.List.of(openai, gemini)) {
             if (credentials.model() == null || !credentials.model().matches("[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}"))
                 throw new IllegalArgumentException("LLM model must be a model ID, not a URL.");
-            if (credentials.configured() && (credentials.apiKey().chars().anyMatch(c -> c < 33 || c > 126)))
-                throw new IllegalArgumentException("LLM API key must not contain whitespace or control characters.");
+            for (String key : credentials.apiKeys()) {
+                if (key.chars().anyMatch(c -> c < 33 || c > 126))
+                    throw new IllegalArgumentException("LLM API key must not contain whitespace or control characters.");
+            }
         }
     }
     public static LlmProperties defaults() {
