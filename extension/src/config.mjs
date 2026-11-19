@@ -14,6 +14,7 @@ export function extensionManifest(origin) {
   const url = new URL(backendOrigin(origin));
   return {
     manifest_version: 3,
+    key: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjlUQlCnu7jAj4B3UNBhNAGEyRL1odx77MNnz6DOepQZfivW++t1WwdkVM0PLLLjEPjvXyR61G08EuR/+gUBKIRm1Uel5IWCk1+rbQDrn8G0hzQHjEVasNl0gjxNJlRggrO1M9e9TUXRoKGVlhXX/KOkXvR7dmRfw/LXHsydARduq0BFub8r8oThJVzjtVvJAo6XGf3zd8F5i7xGMElvdh4wW8sO1WoQB95KGu84vn9KNAaimwTQ9vjyElcHSAkvTbVkBI+lCQNd6O8N0sMpqsNpbqxYNWafrQAic+7LFLMNIIhgy+GzCrrRi+ALV9mOlqhNT15+ayWahlwOc4FenDQIDAQAB',
     name: 'Meeting to Task',
     description: 'Nhập bản ghi, rà soát công việc và tạo thẻ Trello sau khi xác nhận.',
     version: '0.7.0',

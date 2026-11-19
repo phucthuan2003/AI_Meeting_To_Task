@@ -90,11 +90,12 @@ public class SecurityConfiguration {
         if (allowed.stream().anyMatch(s -> s.contains("*"))) throw new IllegalStateException("CORS wildcard is not allowed.");
         config.setAllowedOrigins(allowed);
         config.setAllowedMethods(List.of("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key", "ngrok-skip-browser-warning"));
         config.setExposedHeaders(List.of("X-Trace-Id", "Retry-After"));
         config.setAllowCredentials(false);
         var source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/api/**", config);
+        source.registerCorsConfiguration("/actuator/health", config);
         return source;
     }
 }

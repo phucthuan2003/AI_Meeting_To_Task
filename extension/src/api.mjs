@@ -8,6 +8,7 @@ export class ApiError extends Error {
 export function createApi(origin, { fetchImpl = fetch, onUnauthorized = async () => {}, timeoutMs = 30000 } = {}) {
   async function request(path, { method = 'GET', token, json, form, idempotencyKey } = {}) {
     const headers = {};
+    if (origin.includes('ngrok')) headers['ngrok-skip-browser-warning'] = 'true';
     if (token) headers.Authorization = `Bearer ${token}`;
     if (json !== undefined) headers['Content-Type'] = 'application/json';
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;

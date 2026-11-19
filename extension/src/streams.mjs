@@ -23,7 +23,9 @@ export function watchSnapshots(origin, path, token, { onSnapshot, onError, onUna
   async function connect() {
     controller = new AbortController();
     try {
-      const response = await fetchImpl(origin + path, { headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
+      const headers = { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' };
+      if (origin.includes('ngrok')) headers['ngrok-skip-browser-warning'] = 'true';
+      const response = await fetchImpl(origin + path, { headers,
         credentials: 'omit', cache: 'no-store', redirect: 'error', signal: controller.signal });
       if (!response.ok) throw new ApiError('Không mở được luồng trạng thái.', { status: response.status });
       if (!response.headers.get('Content-Type')?.includes('text/event-stream') || !response.body) throw new Error('Luồng SSE không hợp lệ.');

@@ -69,6 +69,22 @@ def _runtime_error(error: RuntimeError) -> SttUnavailable:
     return SttUnavailable("STT_RUNTIME_ERROR")
 
 
+_HALLUCINATION_MARKERS = (
+    "subscribe cho kenh",
+    "subscribe cho kênh",
+    "la la school",
+    "ghiền mì gõ",
+    "để không bỏ lỡ những video hấp dẫn",
+    "cảm ơn các bạn đã theo dõi video",
+    "hẹn gặp lại các bạn trong những video tiếp theo",
+)
+
+
+def _is_known_hallucination(text: str) -> bool:
+    normalized = " ".join(text.casefold().split())
+    return any(marker in normalized for marker in _HALLUCINATION_MARKERS)
+
+
 class SttEngine:
     def __init__(self, model_name: str, device: str, compute_type: str):
         from faster_whisper import WhisperModel
@@ -90,16 +106,23 @@ class SttEngine:
                 language="vi",
                 temperature=0.0,
                 vad_filter=vad,
-                vad_parameters={"min_silence_duration_ms": 500, "speech_pad_ms": 200},
+                vad_parameters={
+                    "threshold": 0.6,
+                    "min_speech_duration_ms": 250,
+                    "min_silence_duration_ms": 500,
+                    "speech_pad_ms": 200,
+                },
                 word_timestamps=words,
-                condition_on_previous_text=not words,
+                condition_on_previous_text=False,
+                no_speech_threshold=0.45,
+                log_prob_threshold=-0.8,
             )
             results = []
             for segment in segments:
                 start = max(0.0, segment.start)
                 end = min(duration, segment.end)
                 text = segment.text.strip()
-                if start >= end or not text:
+                if start >= end or not text or _is_known_hallucination(text):
                     continue
                 word_spans = tuple(
                     Segment(start=max(start, w.start), end=min(end, w.end), text=w.word)

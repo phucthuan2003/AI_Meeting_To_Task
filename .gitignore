@@ -12,3 +12,7 @@
 /.chart-data-*/
 __pycache__/
 *.py[cod]
+*.docx
+*.ps1
+*.zip
+*.zip
