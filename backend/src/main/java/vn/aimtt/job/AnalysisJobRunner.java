@@ -17,12 +17,17 @@ public class AnalysisJobRunner {
         this.jobs = jobs; this.properties = properties; this.pipeline = pipeline;
     }
     public void runOnce() {
+        runOnce(() -> {});
+    }
+    public boolean runOnce(Runnable onClaimed) {
         var claimed = jobs.claim();
-        if (claimed.isEmpty()) return;
+        if (claimed.isEmpty()) return false;
+        onClaimed.run();
         var lease = claimed.get();
         // Each step reads immutable source outside the short checkpoint transaction.
         while (!Thread.currentThread().isInterrupted() && advance(lease)) { }
         // On interruption no terminal state is fabricated. Another worker can recover the expired lease.
+        return true;
     }
     public boolean advance(Lease lease) {
         try {

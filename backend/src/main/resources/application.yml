@@ -53,7 +53,7 @@ app:
     gemini:
       api-key: ${GEMINI_API_KEY:}
       model: ${GEMINI_MODEL:gemini-2.5-flash}
-    request-timeout: ${LLM_REQUEST_TIMEOUT:10s}
+    request-timeout: ${LLM_REQUEST_TIMEOUT:20s}
     max-input-bytes: 49152
     max-output-tokens: 4096
   chunking:
