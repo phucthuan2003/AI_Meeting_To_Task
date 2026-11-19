@@ -133,7 +133,7 @@ class ProviderTest {
         assertThat(result.json()).isEqualTo(output());
         assertThat(seenKeys).containsExactly("key-1", "key-2", "key-3");
         provider.extract(job("gemini"), "data", json.createObjectNode(), () -> true);
-        assertThat(seenKeys.get(3)).isEqualTo("key-2");
+        assertThat(seenKeys.get(3)).isEqualTo("key-3");
     }
     @Test void geminiStopsOnBadRequestAndThrowsLastErrorWhenAllKeysTimeout() {
         var props = new LlmProperties(properties().openai(), new LlmProperties.Credentials("key-a,key-b", "gemini-2.5-flash"),
@@ -156,5 +156,32 @@ class ProviderTest {
         assertThatThrownBy(() -> new GeminiProvider(badRequestTransport, props, json).extract(job("gemini"), "data", json.createObjectNode(), () -> true))
                 .isInstanceOfSatisfying(JobFailure.class, e -> assertThat(e.code()).isEqualTo("PROVIDER_REQUEST_REJECTED"));
         assertThat(seen).hasSize(1);
+    }
+    @Test void geminiHedgesSlowRequestWithParallelKeyAndCancelsLoser() throws Exception {
+        var props = new LlmProperties(properties().openai(), new LlmProperties.Credentials("slow-key,fast-key", "gemini-3.5-flash-lite"),
+                java.time.Duration.ofSeconds(20), 49152, 4096);
+        var slowInterrupted = new java.util.concurrent.atomic.AtomicBoolean();
+        var seen = Collections.synchronizedList(new ArrayList<String>());
+        LlmHttpTransport transport = (request, keepLease) -> {
+            String key = request.headers().firstValue("x-goog-api-key").orElseThrow();
+            seen.add(key);
+            if ("slow-key".equals(key)) {
+                try { Thread.sleep(2000); } catch (InterruptedException interrupted) {
+                    slowInterrupted.set(true);
+                    throw new JobFailure("LEASE_LOST", false);
+                }
+            }
+            try { return new LlmHttpTransport.Response(200, json.writeValueAsBytes(success("gemini"))); }
+            catch (Exception failure) { throw new AssertionError(failure); }
+        };
+        var provider = new GeminiProvider(transport, props, json, 40L);
+        long startMs = System.currentTimeMillis();
+        var result = provider.extract(job("gemini"), "data", json.createObjectNode(), () -> true);
+        long elapsedMs = System.currentTimeMillis() - startMs;
+        assertThat(result.json()).isEqualTo(output());
+        assertThat(elapsedMs).isLessThan(1000L);
+        assertThat(seen).containsExactly("slow-key", "fast-key");
+        Thread.sleep(50);
+        assertThat(slowInterrupted).isTrue();
     }
 }
