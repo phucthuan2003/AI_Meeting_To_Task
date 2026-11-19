@@ -9,13 +9,13 @@ const statusLabels = {
   QUEUED: 'Đang chờ worker', PROCESSING: 'Đang xử lý', CANCEL_REQUESTED: 'Đang yêu cầu hủy',
   CANCELLED: 'Đã hủy', FAILED: 'Chưa hoàn tất', PARTIAL_FAILED: 'Một phần chưa hoàn tất', COMPLETED: 'Đã hoàn tất',
 };
-const stageLabels = { WAITING: 'Chờ xử lý', PREPARING_INPUT: 'Chuẩn bị nguồn và ngân sách input', READY_FOR_PROVIDER: 'Đã chuẩn bị nguồn', CALLING_LLM: 'Đang gọi AI và kiểm tra kết quả', CANCELLING: 'Chờ worker xác nhận hủy' };
+const stageLabels = { WAITING: 'Chờ xử lý', PREPARING_INPUT: 'Chuẩn bị nguồn và ngân sách input', READY_FOR_PROVIDER: 'Đã chuẩn bị nguồn', CALLING_LLM: 'Đang phân tích và kiểm tra kết quả', CANCELLING: 'Chờ worker xác nhận hủy' };
 const providerNames = { openai: 'OpenAI', gemini: 'Gemini', unconfigured: 'Job chuẩn bị trước đây' };
 
 export function ProviderChoice({ policies, value, onChange, disabled }) {
-  return <label>Chọn AI
+  return <label>Dịch vụ phân tích
     <select value={value} onChange={event => onChange(event.target.value)} disabled={disabled}>
-      <option value="" disabled>Chọn OpenAI hoặc Gemini</option>
+      <option value="" disabled>Chọn dịch vụ</option>
       {policies.map(policy => <option key={policy.providerId} value={policy.providerId}>
         {policy.displayName ?? providerNames[policy.providerId] ?? policy.providerId}{policy.providerReady ? '' : ' — chưa kết nối'}
       </option>)}
@@ -30,11 +30,10 @@ export function AnalysisJobStatus({ job, segmentCount }) {
   return <div className="job-status" aria-live="polite">
     <p><strong>{statusLabel}</strong></p>
     {stageLabel !== statusLabel && <p className="small muted">{stageLabel}</p>}
-    <p className="small">AI của job: {providerNames[job.providerId] ?? job.providerId}</p>
+    <p className="small">Dịch vụ của lượt phân tích: {providerNames[job.providerId] ?? job.providerId}</p>
     <p className="small">Nguồn đã chuẩn bị: {job.preparedSegments} / {segmentCount} segments</p>
     {job.totalChunks !== null && <p className="small">Phần phân tích hoàn tất: {job.completedChunks} / {job.totalChunks}</p>}
     {job.error && <div className="notice error"><strong>{job.error.message}</strong><div className="small">{job.error.code}</div></div>}
-    <p className="small muted break">Job ID: {job.jobId}<br />Input version: {job.inputVersion} · Lần worker nhận: {job.attemptCount}</p>
   </div>;
 }
 
@@ -80,7 +79,7 @@ export default function AnalysisPanel({ api, token, meeting, onActivity, onRevie
       if (mounted.current && current === generation.current) {
         const options = result.filter(item => ['openai', 'gemini'].includes(item.providerId));
         setPolicies(options);
-        if (!options.length) throw new Error('Backend chưa hỗ trợ chọn OpenAI/Gemini. Khởi động lại backend mới rồi tải lại meeting.');
+        if (!options.length) throw new Error('Chưa có dịch vụ phân tích khả dụng. Kiểm tra cấu hình backend rồi tải lại cuộc họp.');
       }
     });
     const jobLoad = meeting.currentAnalysisJobId ? api.job(token, meeting.currentAnalysisJobId).then(result => {
@@ -132,10 +131,7 @@ export default function AnalysisPanel({ api, token, meeting, onActivity, onRevie
     <p className="eyebrow">PHÂN TÍCH</p><h3>Tiến trình xử lý cuộc họp</h3>
     {loading && <p className="small muted">Đang khôi phục trạng thái từ backend…</p>}
     <ProviderChoice policies={policies} value={selectedProvider} disabled={locked || active || Boolean(pendingStart.current)} onChange={setSelectedProvider} />
-    {!loading && !policy && policies.length > 0 && <p className="small muted">Chọn AI trước khi tạo job. Lựa chọn được lưu theo từng job.</p>}
-    {policy && <p className={policy.providerReady ? 'small muted' : 'notice'}>{policy.description}
-      {!policy.providerReady && ' Job chuẩn bị chưa tạo công việc; cấu hình key ở backend rồi khởi động lại.'}
-    </p>}
+    {policy && !policy.providerReady && <p className="notice">{policy.description} Job chuẩn bị chưa tạo công việc; cấu hình key ở backend rồi khởi động lại.</p>}
     <ErrorNotice error={error} />
     {pollNote && <p className="small muted">{pollNote}</p>}
     {pendingStart.current && !working && <p className="small muted">Chưa xác định yêu cầu tạo job đã được lưu hay chưa. Bấm nút tạo/phân tích để gửi lại cùng lựa chọn, hoặc tải lại meeting để kiểm tra.</p>}
@@ -147,7 +143,7 @@ export default function AnalysisPanel({ api, token, meeting, onActivity, onRevie
     <div className="actions">
       <button className="primary" disabled={locked || active || !policy} onClick={() => {
         // Re-analysis publishes a new candidate set; AI drafts of the old set leave the current review (manual tasks stay).
-        if (!pendingStart.current && job?.status === 'COMPLETED' && !window.confirm('Phân tích lại sẽ tạo danh sách đề xuất AI mới. Chỉnh sửa trên các đề xuất AI hiện tại sẽ không còn hiển thị; task thủ công được giữ. Tiếp tục?')) return;
+        if (!pendingStart.current && job?.status === 'COMPLETED' && !window.confirm('Phân tích lại sẽ thay các đề xuất hiện tại và bỏ phần chỉnh sửa trên các đề xuất đó. Công việc thủ công được giữ. Tiếp tục?')) return;
         pendingStart.current ??= { key: crypto.randomUUID(), providerId: policy.providerId, processingPolicyId: policy.processingPolicyId };
         const pending = pendingStart.current;
         const current = generation.current;
@@ -169,7 +165,5 @@ export default function AnalysisPanel({ api, token, meeting, onActivity, onRevie
       {job?.error?.retryable && !active && <button disabled={locked} onClick={() => action(() => api.retryJob(token, job.jobId))}>Thử lại job</button>}
       {!job && error && <button disabled={locked} onClick={onReload}>Tải lại meeting</button>}
     </div>
-    <p className="small muted">Job lưu ở backend và tiếp tục khi panel đóng. Input bị khóa sửa trong lúc job đang chờ, xử lý hoặc hủy.</p>
-    {active && <p className="small muted">Hủy là best effort. Khi có provider thật, request đã gửi có thể vẫn được tính phí.</p>}
   </section>{!loading && <ReviewPanel api={api} token={token} meeting={meeting} job={job} onDirty={onReviewDirty} disabled={disabled} />}</>;
 }

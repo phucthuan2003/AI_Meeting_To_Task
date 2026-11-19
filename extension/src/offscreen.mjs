@@ -1,20 +1,22 @@
 import { createApi } from './api.mjs';
-import { CAPTURE_STATE, wavBytes } from './audio.mjs';
-import { SESSION_KEY } from './storage.mjs';
+import { wavBytes } from './audio.mjs';
 const origin = __API_ORIGIN__, api = createApi(origin);
 let current = null;
+async function storage(command, fields) {
+  const result = await chrome.runtime.sendMessage({ target: 'capture-storage', command, ...fields });
+  if (!result?.ok) throw new Error(result?.error || 'Không đọc được trạng thái phiên thu.');
+  return result;
+}
 async function status(extra = {}) {
   if (!current) return;
   Object.assign(current, extra);
-  await chrome.storage.session.set({ [CAPTURE_STATE]: {
+  await storage('status', { status: {
     id: current.id, userId: current.userId, origin, state: current.state, error: current.error ?? '',
     queued: current.queue.length, sent: current.sent, capturedSeconds: Math.round(current.total / current.rate),
   } });
 }
 async function auth() {
-  const value = (await chrome.storage.session.get(SESSION_KEY))[SESSION_KEY];
-  if (!value || value.user.id !== current.userId || value.origin !== origin || Date.parse(value.expiresAt) <= Date.now()) throw new Error('Phiên đăng nhập hết hạn. Dừng thu; đăng nhập lại rồi bấm Gửi lại đoạn đang chờ.');
-  return value.accessToken;
+  return (await storage('auth', { userId: current.userId, origin })).accessToken;
 }
 function closeTracks() {
   if (!current) return;
@@ -79,6 +81,11 @@ async function stop() {
 chrome.runtime.onMessage.addListener((message,sender,reply)=>{
   if(sender.id!==chrome.runtime.id || message.target!=='capture-offscreen')return;
   (async()=>{
+    if (message.command === 'session-changed') {
+      if (current?.state === 'RECORDING' && (message.userId !== current.userId
+          || message.origin !== origin || !(Date.parse(message.expiresAt) > Date.now()))) await stop();
+      return { ok: true };
+    }
     if(message.command!=='start' && (!current || message.id!==current.id))throw new Error('Phiên thu cục bộ không khớp.');
     if(message.command==='start')await start(message);
     if(message.command==='stop')await stop();
@@ -87,10 +94,4 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
     return {ok:true};
   })().then(reply,error=>reply({ok:false,error:error.message}));
   return true;
-});
-
-chrome.storage.onChanged.addListener((changes,area)=>{
-  if(area!=='session'||!changes[SESSION_KEY]||current?.state!=='RECORDING')return;
-  const next=changes[SESSION_KEY].newValue;
-  if(!next||next.user?.id!==current.userId||next.origin!==origin||Date.parse(next.expiresAt)<=Date.now())stop().catch(()=>{});
 });

@@ -25,7 +25,7 @@ public class AnalysisPolicy {
     public Definition resolve(String provider, String policy, AnalysisProperties analysis) {
         validate(provider, policy);
         if (ID.equals(policy)) return new Definition(provider, "NOT_CONFIGURED", ID, "pending-llm-v1", "action-items-v1", analysis.contextTokens(), analysis.reservedTokens());
-        if (!properties.credentials(provider).configured()) throw ApiException.invalid("Provider chưa được cấu hình API key ở backend. Tải lại danh sách AI.");
+        if (!properties.credentials(provider).configured()) throw ApiException.invalid("Dịch vụ phân tích chưa có khóa API. Kiểm tra cấu hình backend rồi tải lại danh sách dịch vụ.");
         return new Definition(provider, properties.credentials(provider).model(), LLM_ID, ExtractionPrompt.versionFor(provider), ExtractionPrompt.SCHEMA_VERSION, 65536, properties.maxOutputTokens());
     }
     public record View(String providerId, String displayName, String processingPolicyId, boolean providerReady, String description) {}
@@ -35,7 +35,7 @@ public class AnalysisPolicy {
     private View view(String id, String name) {
         boolean ready = properties.credentials(id).configured();
         return new View(id, name, ready ? LLM_ID : ID, ready,
-                ready ? "Bấm Phân tích sẽ gửi transcript và metadata cuộc họp đến " + name + ". Kết quả AI cần bạn kiểm tra trước khi dùng."
+                ready ? "Bấm Phân tích sẽ gửi transcript và metadata cuộc họp đến " + name + ". Kiểm tra các đề xuất trước khi dùng."
                         : "Chưa cấu hình API key của " + name + "; hiện chỉ chuẩn bị input, chưa gửi transcript tới provider.");
     }
 }

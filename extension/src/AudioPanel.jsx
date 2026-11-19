@@ -10,7 +10,7 @@ function LiveDraft({ proposal, override, version, onSave, onDirty }) {
   const displayed={...proposal,...override};
   return <div className="segment">
     <strong>{displayed.taskName}</strong><p>{displayed.assigneeRaw || 'Chưa rõ người'} · {displayed.deadlineRaw || 'Chưa rõ hạn'}</p>
-    {override && <p className="small notice">Đã có bản sửa của bạn. AI tiếp tục cập nhật đề xuất gốc; phần sửa này được giữ khi chốt. Nếu AI hủy việc, cần kiểm tra lại ở bước chốt.</p>}
+    {override && <p className="small notice">Đề xuất gốc có thể thay đổi trong lúc thu. Phần bạn sửa được giữ khi chốt nếu công việc vẫn còn trong danh sách.</p>}
     <details><summary>Bằng chứng</summary>{proposal.evidence.map((e,i)=><p key={i}>{e.quote}</p>)}</details>
     {!draft ? <button onClick={()=>setDraft({ expectedVersion:version, base:{taskName:displayed.taskName,assigneeRaw:displayed.assigneeRaw??'',deadlineRaw:displayed.deadlineRaw??''}, taskName:displayed.taskName,assigneeRaw:displayed.assigneeRaw??'',deadlineRaw:displayed.deadlineRaw??'' })}>Sửa bản nháp live</button> : <form onSubmit={async e=>{
       e.preventDefault();setBusy(true);setError(null);
@@ -86,7 +86,6 @@ export default function AudioPanel({ api, session, onOpenMeeting, onDirty = () =
   }
   return <section className="card">
     <h2>File ghi âm / Họp trực tiếp</h2>
-    <p className="small muted">Âm thanh sẽ được gửi tới Groq để chuyển thành văn bản. Live còn gửi transcript tới AI đã chọn. Chỉ bắt đầu khi bạn được phép ghi và đã thông báo cho người tham gia.</p>
     {sessions.length>0&&<label>Khôi phục phiên đã có<select value={capture?.id??''} onChange={e=>{const id=e.target.value;if(id)action(async()=>remember(await api.capture(token,id)));}}>
       <option value="">Chọn phiên</option>{sessions.map(item=><option key={item.id} value={item.id}>{item.title||item.mode} · {item.status} · {item.id.slice(0,8)}</option>)}
     </select></label>}
@@ -96,11 +95,10 @@ export default function AudioPanel({ api, session, onOpenMeeting, onDirty = () =
       <label>Tiêu đề<input maxLength={255} value={title} onChange={e=>setTitle(e.target.value)}/></label>
       <label>Ngày họp<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label>
       <label>Múi giờ<input value={zone} onChange={e=>setZone(e.target.value)}/></label>
-      {mode==='FILE'?<><input type="file" accept=".wav,.mp3,.m4a,.webm" onChange={e=>setFile(e.target.files?.[0]??null)}/><p className="small muted">Tối đa 10 MiB và một giờ; giới hạn thời lượng được kiểm tra từ kết quả STT.</p></>:<>
-        <label>AI<select value={provider} onChange={e=>setProvider(e.target.value)}><option value="">Chọn AI</option>{policies.map(p=><option key={p.providerId} value={p.providerId}>{p.displayName}</option>)}</select></label>
+      {mode==='FILE'?<><input type="file" accept=".wav,.mp3,.m4a,.webm" onChange={e=>setFile(e.target.files?.[0]??null)}/></>:<>
+        <label>Dịch vụ phân tích<select value={provider} onChange={e=>setProvider(e.target.value)}><option value="">Chọn dịch vụ</option>{policies.map(p=><option key={p.providerId} value={p.providerId}>{p.displayName}</option>)}</select></label>
         <button type="button" onClick={()=>chrome.tabs.create({url:chrome.runtime.getURL('microphone.html')})}>Cấp quyền microphone</button>
         <label><input type="checkbox" checked={microphone} onChange={e=>setMicrophone(e.target.checked)}/> Kèm microphone</label>
-        <p className="small muted">Mở tab họp và bấm biểu tượng extension tại tab đó trước khi bắt đầu. Thu âm tab đang mở; chưa hỗ trợ thu toàn bộ âm thanh ứng dụng desktop. Tối đa hai giờ, 480 đoạn. Đề xuất là tạm thời, không tự tạo card.</p>
       </>}
       <button disabled={busy||(mode==='LIVE'&&!provider)} onClick={()=>action(create)}>{mode==='FILE'?'Gửi file để chuyển lời nói':'Chuẩn bị phiên live'}</button>
     </fieldset>:<>
@@ -124,8 +122,7 @@ export default function AudioPanel({ api, session, onOpenMeeting, onDirty = () =
       {!['PUBLISHED','CANCELLED'].includes(capture.status)&&<button disabled={busy} onClick={()=>action(async()=>{if(!window.confirm('Hủy phiên và xóa audio/transcript tạm chưa lưu?'))return;await control('cancel').catch(()=>{});setCapture(await api.cancelCapture(token,capture.id));})}>Hủy phiên</button>}
       {capture.status==='PUBLISHED'&&<button onClick={()=>{setCapture(null);chrome.storage.local.remove(pointer);}}>Phiên mới</button>}
       {capture.mode==='LIVE' && Object.keys(capture.overrides).some(ref=>!capture.proposals.some(p=>p.taskRef===ref)) &&
-        <p className="notice">Có bản sửa thuộc việc AI đã hủy/không còn trong danh sách. Các việc đó không tự được khôi phục khi chốt; kiểm tra và thêm thủ công nếu cần.</p>}
-      <p className="small muted">Đoạn đã upload và checkpoint được lưu ở backend. Audio chưa upload chỉ ở bộ nhớ phiên thu; đóng Chrome có thể mất đoạn này. Phiên tạm hết hạn sau 24 giờ.</p>
+        <p className="notice">Một số công việc bạn đã sửa không còn trong danh sách. Kiểm tra và thêm lại thủ công nếu cần.</p>}
       <details><summary>Transcript STT ({capture.sources.length} đoạn)</summary>{capture.sources.map(s=><p key={s.segmentId}>{(s.startMs/1000).toFixed(2)}s — {s.text}</p>)}</details>
       {capture.mode==='LIVE'&&<><h3>Đề xuất tạm — cần review sau khi chốt</h3>
         {capture.proposals.map(p=><LiveDraft key={p.taskRef} proposal={p} override={capture.overrides[p.taskRef]} version={capture.version}

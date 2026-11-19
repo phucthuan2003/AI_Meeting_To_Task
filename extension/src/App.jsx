@@ -113,7 +113,7 @@ export default function App() {
     resetDisplay();
     setSelectionInitial({ title: '', meetingDate: '', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? '', transcriptText: selection.text });
     dirty.current = true;
-    setNotice('Đã đưa văn bản vào bản nháp mới. Kiểm tra rồi bấm Lưu; chưa gửi tới AI.');
+    setNotice('Đã đưa văn bản vào bản nháp mới. Kiểm tra rồi bấm Lưu khi đã sẵn sàng.');
     dismissSelection();
   }
   function dismissSelection() {
@@ -161,7 +161,7 @@ export default function App() {
       // Adopt the committed meeting before querying sources. A source-read error must not cause a second create.
       setSelectionInitial(null); setMeeting(saved); setSource(null); setView('meeting'); setEditing(false); dirty.current = false;
       setJobActive(false);
-      setNotice('Input đã lưu trên backend. Chưa gửi đến LLM.');
+      setNotice('Đã lưu nội dung. Bạn có thể bắt đầu phân tích.');
       await storage.setActive(session.user.id, saved.meetingId);
       const page = assertRevision(saved, await api.transcript(token, saved.meetingId));
       if (currentSession.current?.accessToken === token) setSource(page);
@@ -180,7 +180,7 @@ export default function App() {
     {selection && <section className="card">
       <h3>Văn bản từ menu chuột phải</h3>
       {selection.error ? <p className="notice">{selection.error}</p> : <>
-        <p className="small muted">{selection.text.length.toLocaleString('vi-VN')} ký tự · Chưa lưu hoặc gửi tới AI. Bản chờ hết hạn sau 10 phút.</p>
+        <p className="small muted">{selection.text.length.toLocaleString('vi-VN')} ký tự</p>
         <pre className="transcript">{selection.text.slice(0, 1000)}</pre>
         <button disabled={busy || booting || !session} onClick={importSelection}>Dùng cho meeting mới</button>
       </>}
@@ -191,7 +191,6 @@ export default function App() {
       <button disabled={busy || booting} onClick={() => run(() => api.health(), result => {
         setHealth(result.status === 'UP' ? 'Sẵn sàng' : result.status);
       })}>Kiểm tra kết nối</button>
-      <p className="small muted">Health UP chỉ xác minh backend/DB. Đăng nhập kiểm tra tiếp quyền API và CORS.</p>
     </details>
     {booting ? <p role="status">Đang khôi phục phiên…</p> : <>
       {session && <><div className="account row"><span className="small break">{session.user.email}</span><button disabled={busy} onClick={logout}>Đăng xuất</button></div>
@@ -230,6 +229,6 @@ export default function App() {
         }, setSource)} /></>}
       </>}
     </>}
-    <footer>AI Meeting to Task · Bản 0.7</footer>
+    <footer>Meeting to Task · Bản 0.7</footer>
   </main>;
 }

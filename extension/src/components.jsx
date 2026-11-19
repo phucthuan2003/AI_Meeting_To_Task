@@ -18,7 +18,6 @@ export function AuthForm({ busy, onSubmit }) {
   const [error, setError] = useState(null);
   return <section className="card">
     <p className="eyebrow">BẮT ĐẦU</p><h2>{register ? 'Tạo tài khoản' : 'Đăng nhập'}</h2>
-    <p className="muted">Meeting đã lưu sẽ được khôi phục khi bạn đăng nhập cùng tài khoản.</p>
     <form onSubmit={(event) => {
       event.preventDefault(); setError(null);
       try { onSubmit(validateCredentials(email, password), register, () => setPassword('')); }
@@ -62,7 +61,6 @@ export function InputForm({ initial, version, busy, onSave, onDirty, onCancel })
           <label>Ngày họp<input type="date" value={draft.meetingDate} onChange={e => update('meetingDate', e.target.value)} /></label>
           <label>Múi giờ<input maxLength={64} value={draft.timezone} onChange={e => update('timezone', e.target.value)} placeholder="Asia/Ho_Chi_Minh" /></label>
         </div>
-        <p className="small muted">Ngày họp để trống nếu chưa biết. Kiểm tra lại múi giờ gợi ý từ trình duyệt.</p>
         {!editing && <div className="switch" role="group" aria-label="Cách nhập">
           <button type="button" aria-pressed={mode === 'paste'} onClick={() => { setMode('paste'); setError(null); }}>Dán văn bản</button>
           <button type="button" aria-pressed={mode === 'file'} onClick={() => { setMode('file'); setError(null); }}>TXT / DOCX / VTT / SRT</button>
@@ -72,9 +70,7 @@ export function InputForm({ initial, version, busy, onSave, onDirty, onCancel })
           <p className={`small ${draft.transcriptText.length > MAX_TEXT ? 'danger' : 'muted'}`}>{draft.transcriptText.length.toLocaleString('vi-VN')} / 200.000 ký tự UTF-16</p>
         </> : <>
           <label className="upload">Chọn một file<input type="file" accept=".txt,.docx,.vtt,.srt" onChange={e => { setFile(e.target.files?.[0] ?? null); onDirty(); }} required /></label>
-          <p className="small muted">Tối đa 10 MiB. TXT/VTT/SRT dùng UTF-8; phụ đề giữ timestamp, DOCX chỉ đọc nội dung body. Backend kiểm tra và chuẩn hóa văn bản.</p>
         </>}
-        <p className="small muted">Bấm lưu để gửi transcript tới backend và xem preview. Nội dung chưa lưu sẽ mất khi đóng panel.</p>
         <ErrorNotice error={error} />
         <div className="actions"><button className="primary" type="submit">{busy ? 'Đang lưu…' : editing ? 'Lưu revision mới' : 'Lưu & xem preview'}</button>
           {onCancel && <button type="button" onClick={onCancel}>Hủy sửa</button>}</div>
@@ -94,7 +90,6 @@ export function MeetingDetail({ meeting, source, busy, inputLocked, onMore, onRe
       {meeting.characterCount > meeting.preview.length && <p className="small muted">Preview tối đa 4.000 ký tự. Xem segments bên dưới để đọc tiếp.</p>}
       {meeting.warnings.map((warning, index) => <p className="notice" key={index}>{warning === 'DOCX_NON_BODY_CONTENT_OMITTED' ? 'Header, footer hoặc comment của DOCX không được nhập vào transcript.' : warning}</p>)}
       <div className="actions"><button disabled={busy} onClick={onReload}>Tải lại</button><button disabled={busy || inputLocked} onClick={onEdit}>Thay input</button></div>
-      <p className="small muted break">Meeting ID: {meeting.meetingId}<br />Nguồn dự kiến hết hạn: {new Date(meeting.sourceExpiresAt).toLocaleString('vi-VN')}</p>
     </section>
     <section className="card">
       <h3>Nội dung & vị trí nguồn</h3>
@@ -102,8 +97,6 @@ export function MeetingDetail({ meeting, source, busy, inputLocked, onMore, onRe
         {source.segments.map(segment => <details key={segment.segmentId} className="segment">
           <summary><span className="small muted">#{segment.sequence + 1}{segment.timestamp && ` · ${segment.timestamp}`}</span><p>{segment.text}</p></summary>
           <h4>Văn bản nguồn</h4><pre className="transcript">{segment.sourceText}</pre>
-          <pre className="small locator">{JSON.stringify(segment.sourceLocator, null, 2)}</pre>
-          <p className="small muted">Vị trí chuẩn hóa: [{segment.normalizedStart}, {segment.normalizedEnd}) UTF-16</p>
         </details>)}
         <p className="small muted">Đã tải {source.segments.length} / {meeting.segmentCount} segments.</p>
         {source.nextCursor !== null && <button className="full" disabled={busy} onClick={onMore}>Xem thêm nội dung</button>}
@@ -111,7 +104,6 @@ export function MeetingDetail({ meeting, source, busy, inputLocked, onMore, onRe
     </section>
     {(onDeleteTranscript || onDeleteMeeting) && <section className="card privacy">
       <p className="eyebrow">DỮ LIỆU</p>
-      <p className="small muted">Nội dung nguồn tự xóa sau {new Date(meeting.sourceExpiresAt).toLocaleDateString('vi-VN')}. Task đã duyệt và liên kết card được giữ để không tạo trùng; xóa trong hệ thống không xóa card trên Trello.</p>
       <div className="actions">
         {onDeleteTranscript && meeting.sourceAvailable !== false && <button className="danger-button" disabled={busy} onClick={onDeleteTranscript}>Xóa nội dung transcript</button>}
         {onDeleteMeeting && <button className="danger-button" disabled={busy} onClick={onDeleteMeeting}>Xóa meeting</button>}

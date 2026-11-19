@@ -100,10 +100,10 @@ async def stream(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "STREAM_END"})
                 await websocket.close()
                 return
-        except (WebSocketDisconnect, OSError):
-            return
         except asyncio.TimeoutError:
             await websocket.close(code=1008, reason="STREAM_IDLE_TIMEOUT")
+        except (WebSocketDisconnect, OSError):
+            return
         except json.JSONDecodeError:
             await websocket.close(code=1003, reason="INVALID_STREAM_COMMAND")
         except ValueError as error:

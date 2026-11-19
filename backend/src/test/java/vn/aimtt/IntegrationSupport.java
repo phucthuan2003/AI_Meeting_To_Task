@@ -30,7 +30,6 @@ abstract class IntegrationSupport {
     @DynamicPropertySource static void properties(DynamicPropertyRegistry registry) {
         TestDatabase.properties(registry);
         registry.add("app.llm.openai.api-key", () -> "synthetic-openai-key");
-        registry.add("app.sync.worker-enabled", () -> false);
         registry.add("app.trello.api-base-url", () -> TRELLO.base() + "/1");
         registry.add("app.trello.token-url", () -> TRELLO.base() + "/oauth/token");
         registry.add("app.trello.authorize-url", () -> TRELLO.base() + "/authorize");

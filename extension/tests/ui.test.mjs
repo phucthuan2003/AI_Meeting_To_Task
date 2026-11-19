@@ -68,13 +68,13 @@ test('active job disables only input replacement while source reload remains ava
   assert.match(html, /<button>Tải lại<\/button>/);
 });
 
-test('AI selector offers both choices, marks unconfigured providers and requires explicit selection', () => {
+test('analysis service selector offers both choices, marks unconfigured providers and requires explicit selection', () => {
   const policies = [
     { providerId: 'openai', displayName: 'OpenAI', providerReady: false },
     { providerId: 'gemini', displayName: 'Gemini', providerReady: false },
   ];
   const html = renderToStaticMarkup(React.createElement(ProviderChoice, { policies, value: '', onChange() {} }));
-  assert.match(html, /<option value="" disabled="" selected="">Chọn OpenAI hoặc Gemini/);
+  assert.match(html, /<option value="" disabled="" selected="">Chọn dịch vụ/);
   assert.ok(html.includes('OpenAI — chưa kết nối') && html.includes('Gemini — chưa kết nối'));
   assert.equal((html.match(/<option /g) ?? []).length, 3);
   const locked = renderToStaticMarkup(React.createElement(ProviderChoice, { policies, value: 'gemini', disabled: true }));
@@ -86,7 +86,7 @@ test('job provider remains visible independently of the next choice and terminal
   const html = renderToStaticMarkup(React.createElement(AnalysisJobStatus, { segmentCount: 2,
     job: { jobId: 'job-a', providerId: 'openai', status: 'FAILED', stage: 'FAILED', preparedSegments: 2,
       completedChunks: 0, totalChunks: 1, inputVersion: 7, attemptCount: 1 } }));
-  assert.ok(html.includes('AI của job: OpenAI'));
+  assert.ok(html.includes('Dịch vụ của lượt phân tích: OpenAI'));
   assert.equal((html.match(/Chưa hoàn tất/g) ?? []).length, 1);
 });
 
@@ -99,10 +99,11 @@ const aiTask = (overrides = {}) => ({ taskId: 'task-a', meetingId: 'meeting-1', 
   aiNotes: [], editedFields: [], evidence: [{ segmentId: 's1', sequence: 0, field: 'TASK', quote: injection, sourceAvailable: true }], ...overrides });
 const cardProps = task => ({ task, api: {}, token: 't', selected: true, onSelect() {}, onSaved() {}, onStateChange() {}, onConflict() {}, onReject() {}, onRestore() {} });
 
-test('task card escapes AI text, shows server warnings, evidence and provenance badge without auto-creating cards', () => {
+test('task card escapes suggestion text, shows server warnings, evidence and provenance badge without auto-creating cards', () => {
   const html = renderToStaticMarkup(React.createElement(TaskCard, cardProps(aiTask())));
   assert.ok(html.includes('&lt;img') && !html.includes('<img') && !html.includes('<script'));
-  assert.ok(html.includes('Đề xuất AI') && html.includes('Bằng chứng từ transcript (1)'));
+  assert.ok(html.includes('>Đề xuất</span>') && html.includes('Bằng chứng từ transcript (1)'));
+  assert.ok(!html.includes('Đề xuất AI'));
   assert.ok(html.includes('“trước thứ Sáu” · cần xác nhận'));
   assert.ok(html.includes('Mai · chờ đối chiếu thành viên Trello'));
   assert.match(html, /<input type="checkbox" aria-label="[^"]*" checked=""\/>/);
@@ -111,12 +112,12 @@ test('task card escapes AI text, shows server warnings, evidence and provenance 
   assert.ok(edited.includes('Đã sửa'));
 });
 
-test('rejected and non-current tasks cannot be selected or edited; manual task shows no AI evidence', () => {
+test('rejected and non-current tasks cannot be selected or edited; manual task has no transcript evidence', () => {
   const rejected = renderToStaticMarkup(React.createElement(TaskCard, cardProps(aiTask({ reviewStatus: 'REJECTED', editable: false }))));
   assert.ok(rejected.includes('Đã loại bỏ') && rejected.includes('>Khôi phục<'));
   assert.ok(!rejected.includes('type="checkbox"') && !rejected.includes('>Sửa<'));
   const manual = renderToStaticMarkup(React.createElement(TaskCard, cardProps(aiTask({ origin: 'USER', analysisJobId: null, aiSuggestion: null, evidence: [] }))));
-  assert.ok(manual.includes('Thủ công') && manual.includes('không có bằng chứng AI'));
+  assert.ok(manual.includes('Thủ công') && manual.includes('chưa có trích dẫn từ bản ghi'));
 });
 
 test('confirmed deadline shows weekday, full year, time and timezone before any card is created', () => {
@@ -127,7 +128,7 @@ test('confirmed deadline shows weekday, full year, time and timezone before any 
   const none = renderToStaticMarkup(React.createElement(TaskSummary, { task: aiTask({ deadlineResolution: 'NONE_SELECTED', warnings: [] }) }));
   assert.ok(none.includes('Không đặt hạn') && none.includes('Câu gốc về hạn'));
   const pending = renderToStaticMarkup(React.createElement(TaskSummary, { task: aiTask(), saveState: 'dirty' }));
-  assert.ok(pending.includes('Chưa lưu') && pending.includes('tính lại sau khi lưu'));
+  assert.ok(pending.includes('Chưa lưu'));
 });
 
 test('create button is enabled only without blocking reasons', () => {
@@ -137,13 +138,14 @@ test('create button is enabled only without blocking reasons', () => {
 
 test('create button stays locked and explains every reason', () => {
   const html = renderToStaticMarkup(React.createElement(CreateBar, { gate: { count: 2, reasons: ['Còn thay đổi đang chờ lưu.', 'Kết nối Trello'] } }));
-  assert.match(html, /<button class="primary full" disabled="">Tạo 2 card trên Trello<\/button>/);
+  assert.match(html, /<button class="primary full" disabled="" title="[^"]+">Tạo 2 card trên Trello<\/button>/);
   assert.ok(html.includes('Còn thay đổi đang chờ lưu.'));
 });
 
 test('analysis note distinguishes no action items, running and failed analysis', () => {
   const empty = renderToStaticMarkup(React.createElement(AnalysisNote, { aiCount: 0, analysis: { status: 'COMPLETED', providerId: 'openai', model: 'fixture', warnings: [injection] } }));
   assert.ok(empty.includes('Không tìm thấy công việc') && empty.includes('&lt;img'));
+  assert.doesNotMatch(empty, /OpenAI|Gemini|tokens|Kết quả AI/);
   assert.ok(renderToStaticMarkup(React.createElement(AnalysisNote, { analysis: { status: 'PROCESSING' } })).includes('task thủ công vẫn thêm được'));
   assert.ok(renderToStaticMarkup(React.createElement(AnalysisNote, { analysis: { status: 'FAILED' } })).includes('thêm task thủ công'));
   assert.ok(renderToStaticMarkup(React.createElement(AnalysisNote, { analysis: null })).includes('Chưa có lượt phân tích'));

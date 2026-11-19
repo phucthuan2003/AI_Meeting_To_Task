@@ -121,7 +121,7 @@ public class TaskService {
         }
         if (!body.hasNonNull("taskName")) throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "TASK_NAME_REQUIRED", "Nhập tên công việc.");
         if (body.has("includeEvidenceInCard") && body.get("includeEvidenceInCard").asBoolean(false)) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "NO_EVIDENCE", "Task thủ công không có bằng chứng AI để đính kèm.");
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "NO_EVIDENCE", "Công việc nhập thủ công không có trích dẫn từ bản ghi để đính kèm.");
         }
         long manual = store.current(meetingId, null).size();
         if (manual >= MAX_MANUAL_TASKS) throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "TASK_LIMIT", "Meeting đã đạt giới hạn " + MAX_MANUAL_TASKS + " task thủ công.");
@@ -149,7 +149,7 @@ public class TaskService {
         if (task.ai() && draft.includeEvidenceInCard() && !task.includeEvidenceInCard() && store.evidence(List.of(task.id())).isEmpty()) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "NO_EVIDENCE", "Task không có bằng chứng để đính kèm.");
         }
-        if (!task.ai() && draft.includeEvidenceInCard()) throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "NO_EVIDENCE", "Task thủ công không có bằng chứng AI để đính kèm.");
+        if (!task.ai() && draft.includeEvidenceInCard()) throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "NO_EVIDENCE", "Công việc nhập thủ công không có trích dẫn từ bản ghi để đính kèm.");
         boolean reopening = "APPROVED".equals(task.reviewStatus());
         if (draft.equals(task.draft()) && !reopening) return view(owner, task, locked.meeting());
         Instant now = store.now();

@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import vn.aimtt.common.ApiException;
+import vn.aimtt.sync.CardPayloads;
 
 /**
  * Data lifecycle (SDS §6.3, §7.4–7.7, §10.3). Purge removes every copy of source text — raw, normalized, segments,
@@ -113,7 +114,11 @@ public class PrivacyService {
                 payload.set("evidenceQuotes", json.createArrayNode());
                 String desc = payload.path("desc").asText("");
                 int start = desc.indexOf("Trích dẫn từ transcript:");
-                if (start >= 0) { int end = desc.indexOf("Tạo bởi AI Meeting to Task", start); payload.put("desc", desc.substring(0, start) + (end >= 0 ? desc.substring(end) : "")); }
+                if (start >= 0) {
+                    int end = Math.max(desc.lastIndexOf(CardPayloads.DESCRIPTION_FOOTER),
+                            desc.lastIndexOf("Tạo bởi AI Meeting to Task · "));
+                    payload.put("desc", desc.substring(0, start) + (end > start ? desc.substring(end) : ""));
+                }
                 jdbc.update("update task_snapshots set payload_json = ?::jsonb, scrubbed_at = ? where id = ?", payload.toString(), Timestamp.from(now), UUID.fromString(snapshot[0]));
             } catch (Exception e) { log.error("Snapshot scrub failed snapshotId={}", snapshot[0]); }
         }

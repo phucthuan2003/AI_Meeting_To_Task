@@ -14,6 +14,7 @@ import vn.aimtt.trello.DestinationService;
 public final class CardPayloads {
     private CardPayloads() {}
     public static final String MARKER_PREFIX = "AI_MTT_REF=";
+    public static final String DESCRIPTION_FOOTER = "Tạo bởi Meeting to Task · ";
     private static final Map<String, String> PRIORITY = Map.of("LOW", "Thấp", "MEDIUM", "Trung bình", "HIGH", "Cao");
 
     public record Payload(String name, String desc, String idList, List<String> idMembers, String due, String boardId, String listId,
@@ -39,7 +40,7 @@ public final class CardPayloads {
             for (String quote : seen) { String trimmed = quote.length() > 500 ? quote.substring(0, 500) + "…" : quote; quotes.add(trimmed); }
             if (!quotes.isEmpty()) { desc.append("Trích dẫn từ transcript:\n"); quotes.forEach(q -> desc.append("> ").append(q.replace("\n", " ")).append('\n')); desc.append('\n'); }
         }
-        desc.append("Tạo bởi AI Meeting to Task · ").append(marker(task.id()));
+        desc.append(DESCRIPTION_FOOTER).append(marker(task.id()));
         String memberName = null;
         if (assigned) memberName = destination.members().stream().filter(m -> m.id().equals(task.trelloMemberId()))
                 .map(m -> m.fullName() != null ? m.fullName() : m.username()).findFirst().orElse(task.trelloMemberId());

@@ -23,7 +23,8 @@ class SyncRulesTest {
         var unassigned = CardPayloads.build(task(null, "NONE_SELECTED", false, "HIGH"), "Planning", LocalDate.of(2026, 10, 9), destination, evidence);
         assertThat(unassigned.idMembers()).isEmpty();
         assertThat(unassigned.desc()).contains("Chi tiết", "Người phụ trách (theo cuộc họp, chưa giao trên Trello): Mai", "Ưu tiên: Cao",
-                "Cuộc họp: Planning (09/10/2026)", "AI_MTT_REF=" + taskId).doesNotContain("Trích dẫn");
+                "Cuộc họp: Planning (09/10/2026)", "Tạo bởi Meeting to Task · AI_MTT_REF=" + taskId)
+                .doesNotContain("Trích dẫn", "AI Meeting to Task");
         assertThat(unassigned.due()).isEqualTo("2026-10-16T10:00:00Z");
         var assigned = CardPayloads.build(task("member000001", "RESOLVED", true, null), null, null, destination, evidence);
         assertThat(assigned.idMembers()).containsExactly("member000001");

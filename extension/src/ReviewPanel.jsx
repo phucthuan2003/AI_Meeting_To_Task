@@ -21,7 +21,7 @@ export function Evidence({ api, token, task }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  if (!task.evidence.length) return task.origin === 'USER' ? <p className="small muted">Task thủ công không có bằng chứng AI.</p> : null;
+  if (!task.evidence.length) return task.origin === 'USER' ? <p className="small muted">Công việc nhập thủ công chưa có trích dẫn từ bản ghi.</p> : null;
   return <details className="evidence"><summary>Bằng chứng từ transcript ({task.evidence.length})</summary>
     {task.evidence.map((item, index) => <div className="segment" key={index}>
       <p className="small muted">Segment #{item.sequence + 1} · {FIELD_LABELS[item.field] ?? item.field}{item.speaker && ` · ${item.speaker}`}{item.timestamp && ` · ${item.timestamp}`}</p>
@@ -47,7 +47,7 @@ export function TaskSummary({ task, display = draftOf(task), saveState }) {
   const cardUrl = safeTrelloUrl(task.trelloCardUrl);
   return <>
     <div className="task-badges">
-      <span className={`badge ${task.origin === 'AI' ? 'ai' : 'user'}`}>{task.origin === 'AI' ? 'Đề xuất AI' : 'Thủ công'}</span>
+      <span className={`badge ${task.origin === 'AI' ? 'ai' : 'user'}`}>{task.origin === 'AI' ? 'Đề xuất' : 'Thủ công'}</span>
       {task.editedFields.length > 0 && <span className="badge edited" title={task.editedFields.map(f => EDIT_LABELS[f] ?? f).join(', ')}>Đã sửa</span>}
       {task.reviewStatus === 'REJECTED' && <span className="badge rejected">Đã loại bỏ</span>}
       {saveState && saveState !== 'saved' && <span className={`badge save ${saveState}`} role="status">{SAVE_LABELS[saveState]}</span>}
@@ -61,8 +61,8 @@ export function TaskSummary({ task, display = draftOf(task), saveState }) {
     {shown.priority && <p className="small">Ưu tiên: <strong>{PRIORITY_LABELS[shown.priority]}</strong></p>}
     {saveState === 'saved' || !saveState ? task.warnings.length > 0 && <ul className="warnings">
       {task.warnings.map(warning => <li key={warning.code} className={warning.blocking ? 'blocking' : ''}>{warning.message}</li>)}
-    </ul> : <p className="small muted">Cảnh báo được tính lại sau khi lưu.</p>}
-    {task.aiNotes.length > 0 && <p className="small muted">Ghi chú của AI: {task.aiNotes.join('; ')}</p>}
+    </ul> : null}
+    {task.aiNotes.length > 0 && <p className="small muted">Ghi chú: {task.aiNotes.join('; ')}</p>}
   </>;
 }
 
@@ -89,7 +89,6 @@ function MemberChoice({ task, display, members, onEdit }) {
       {ordered.map(m => <option key={m.id} value={m.id}>{m.fullName ?? m.username}{m.username ? ` (@${m.username})` : ''}{candidates.has(m.id) ? ' — gợi ý theo tên' : ''}</option>)}
     </select></label>
     {task.assigneeRaw && <label className="choice"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />Ghi nhớ “{task.assigneeRaw}” là thành viên đã chọn cho Board này</label>}
-    <p className="small muted">Tên gần giống chỉ là gợi ý; hệ thống không tự giao người.</p>
   </>;
 }
 
@@ -110,14 +109,14 @@ function TaskEditor({ task, display, meetingTimezone, onEdit, disabled, members,
   return <fieldset className="task-editor" disabled={disabled}>
     <label>Tên công việc<input maxLength={255} value={name} onChange={e => { setName(e.target.value); if (e.target.value.trim()) onEdit({ taskName: e.target.value }); }} /></label>
     {!name.trim() && <p className="small danger">Tên không được để trống; thay đổi này chưa được lưu.</p>}
-    {ai && ai.taskName !== display.taskName && <p className="small muted">AI đề xuất: “{ai.taskName}”</p>}
+    {ai && ai.taskName !== display.taskName && <p className="small muted">Gợi ý ban đầu: “{ai.taskName}”</p>}
     <label>Mô tả <span className="optional">(không bắt buộc)</span><textarea rows={3} maxLength={5000} value={display.description ?? ''}
       onChange={e => onEdit({ description: e.target.value === '' ? null : e.target.value })} /></label>
 
     <div className="field-group"><p className="group-title">Người phụ trách</p>
       <label>Tên trong cuộc họp<input maxLength={255} value={display.assigneeRaw ?? ''} placeholder="Chưa rõ"
         onChange={e => onEdit({ assigneeRaw: e.target.value === '' ? null : e.target.value })} /></label>
-      {ai?.assigneeRaw && ai.assigneeRaw !== display.assigneeRaw && <p className="small muted">AI đề xuất: “{ai.assigneeRaw}”</p>}
+      {ai?.assigneeRaw && ai.assigneeRaw !== display.assigneeRaw && <p className="small muted">Gợi ý ban đầu: “{ai.assigneeRaw}”</p>}
       <MemberChoice task={task} display={display} members={members} onEdit={onEdit} />
     </div>
 
@@ -134,11 +133,10 @@ function TaskEditor({ task, display, meetingTimezone, onEdit, disabled, members,
           <label>Giờ<input type="time" value={due.time} onChange={e => setDueParts({ ...due, time: e.target.value })} /></label>
         </div>
         <label>Múi giờ<input maxLength={64} value={display.timezone ?? zone} onChange={e => onEdit({ timezone: e.target.value || null })} /></label>
-        <p className="small muted">Chỉ có ngày thì giờ mặc định 17:00; bạn có thể sửa.</p>
       </>}
       {ai?.dueLocal && display.dueLocal !== ai.dueLocal && <button type="button" className="text" onClick={() => {
         setPickDue(true); onEdit({ deadlineDecision: 'RESOLVED', dueLocal: ai.dueLocal, timezone: ai.timezone || zone });
-      }}>Dùng đề xuất AI: {formatDue(ai.dueLocal, ai.timezone || zone)}</button>}
+      }}>Dùng hạn gợi ý: {formatDue(ai.dueLocal, ai.timezone || zone)}</button>}
       {suggestion?.suggestedDueLocal && display.dueLocal !== suggestion.suggestedDueLocal && <button type="button" className="text" onClick={() => {
         setPickDue(true); onEdit({ deadlineDecision: 'RESOLVED', dueLocal: suggestion.suggestedDueLocal, timezone: suggestion.timezone || zone });
       }}>Dùng gợi ý: {formatDue(suggestion.suggestedDueLocal, suggestion.timezone || zone)}</button>}
@@ -149,7 +147,6 @@ function TaskEditor({ task, display, meetingTimezone, onEdit, disabled, members,
     <label>Ưu tiên<select value={display.priority ?? ''} onChange={e => onEdit({ priority: e.target.value || null })}>
       <option value="">Không đặt</option>{Object.entries(PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
     </select></label>
-    {ai?.priority === null && display.priority && <p className="small muted">Cuộc họp không nêu mức ưu tiên; đây là lựa chọn của bạn.</p>}
     {task.origin === 'AI' && <label className="choice"><input type="checkbox" checked={display.includeEvidenceInCard}
       onChange={e => onEdit({ includeEvidenceInCard: e.target.checked })} />Đính kèm trích dẫn bằng chứng vào card (xem trước ở bước tạo card)</label>}
   </fieldset>;
@@ -209,7 +206,6 @@ export function TaskCard({ api, token, task, selected, onSelect, onSaved, onStat
       {rejected && <button disabled={disabled} onClick={() => onRestore(task)}>Khôi phục</button>}
     </div>
     {!task.editable && !rejected && <p className="small muted">{task.syncStatus === 'SYNCED' ? 'Card đã tạo; chỉ xem và mở trên Trello.' : ['QUEUED', 'SYNCING', 'UNKNOWN'].includes(task.syncStatus) ? 'Task đang tạo card hoặc chờ đối soát nên tạm khóa sửa.' : 'Task không còn chỉnh sửa được (không thuộc kết quả hiện hành).'}</p>}
-    {task.syncStatus === 'FAILED' && task.editable && <p className="small muted">Tạo card lỗi chắc chắn: sửa task sẽ đưa về trạng thái chờ duyệt để tạo lại.</p>}
   </article>;
 }
 
@@ -256,8 +252,7 @@ export function ManualTaskForm({ api, token, meeting, onCreated, onCancel }) {
 
 export function CreateBar({ gate, onCreate }) {
   return <div className="create-bar">
-    <button className="primary full" disabled={gate.reasons.length > 0 || !onCreate} onClick={onCreate}>Tạo {gate.count} card trên Trello</button>
-    {gate.reasons.length > 0 && <ul className="small muted">{gate.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}
+    <button className="primary full" disabled={gate.reasons.length > 0 || !onCreate} title={gate.reasons.join(' ') || undefined} onClick={onCreate}>Tạo {gate.count} card trên Trello</button>
   </div>;
 }
 
@@ -273,12 +268,12 @@ export function ConfirmCreate({ api, token, tasks, destination, onConfirm, onCan
       <div className="small">Hạn: {task.deadlineResolution === 'RESOLVED' ? formatDue(task.dueLocal, task.timezone) : 'Không đặt hạn'}</div>
       {task.priority && <div className="small">Ưu tiên (ghi vào mô tả): {PRIORITY_LABELS[task.priority]}</div>}
       {task.includeEvidenceInCard && <div className="small">Kèm trích dẫn bằng chứng trong mô tả</div>}
-      {previews[task.taskId] ? <pre className="small locator">{previews[task.taskId].payload.desc}</pre>
+      {previews[task.taskId] ? <pre className="small locator">{previews[task.taskId].payload.desc
+        .replace(/(?:Tạo bởi AI Meeting to Task · | · )?AI_MTT_REF=[\da-f-]{36}$/i, '').trimEnd()}</pre>
         : <button className="text" onClick={async () => {
           try { const value = await api.cardPreview(token, task.taskId); setPreviews(current => ({ ...current, [task.taskId]: value })); } catch { /* preview is optional */ }
         }}>Xem trước mô tả card</button>}
     </li>)}</ol>
-    <p className="small muted">Sau khi xác nhận, backend lưu bản chụp đúng nội dung trên; task bị khóa sửa trong lúc tạo card. Thay đổi trên Trello không được đồng bộ ngược.</p>
     <ErrorNotice error={error} />
     {error?.details?.length > 0 && <ul className="small danger">{error.details.map((d, i) => <li key={i}>{tasks.find(t => t.taskId === d.taskId)?.taskName ?? d.taskId}: {d.code}</li>)}</ul>}
     <div className="actions"><button className="primary" disabled={busy} onClick={onConfirm}>{busy ? 'Đang gửi…' : `Xác nhận tạo ${tasks.length} card`}</button>
@@ -288,13 +283,12 @@ export function ConfirmCreate({ api, token, tasks, destination, onConfirm, onCan
 
 export function AnalysisNote({ analysis, aiCount }) {
   if (!analysis) return <p className="small muted">Chưa có lượt phân tích hiện hành. Bạn vẫn có thể thêm task thủ công.</p>;
-  if (isActiveJob(analysis.status)) return <p className="notice">AI đang phân tích. Đề xuất sẽ hiện khi job hoàn tất; task thủ công vẫn thêm được.</p>;
+  if (isActiveJob(analysis.status)) return <p className="notice">Đang phân tích cuộc họp. Đề xuất sẽ hiện khi job hoàn tất; task thủ công vẫn thêm được.</p>;
   if (analysis.status === 'COMPLETED') return <>
     {aiCount === 0 && <p className="notice">Không tìm thấy công việc cần thực hiện trong transcript. Đọc lại nội dung hoặc thêm task thủ công.</p>}
-    {analysis.warnings.map((warning, index) => <p className="notice" key={index}>Kết quả AI có tham chiếu chưa liên kết: {warning}</p>)}
-    <p className="small muted">{analysis.providerId === 'openai' ? 'OpenAI' : 'Gemini'} · {analysis.model} · input {analysis.inputTokens ?? '—'}, output {analysis.outputTokens ?? '—'} tokens · {analysis.latencyMs ?? '—'} ms</p>
+    {analysis.warnings.map((warning, index) => <p className="notice" key={index}>Có tham chiếu chưa liên kết: {warning}</p>)}
   </>;
-  return <p className="notice">Phân tích chưa hoàn tất nên chưa có đề xuất AI. Bạn có thể thử lại job hoặc thêm task thủ công.</p>;
+  return <p className="notice">Phân tích chưa hoàn tất nên chưa có đề xuất. Bạn có thể thử lại job hoặc thêm task thủ công.</p>;
 }
 
 export default function ReviewPanel({ api, token, meeting, job, onDirty, disabled }) {
@@ -404,7 +398,6 @@ export default function ReviewPanel({ api, token, meeting, job, onDirty, disable
   <section className="card review">
     <div className="row"><div><p className="eyebrow">REVIEW CÔNG VIỆC</p><h3>{pending.length} task · {needsAttention} cần xử lý</h3></div>
       <button disabled={loading || acting} onClick={reload}>Tải lại</button></div>
-    <p className="small muted">Bản nháp lưu tự động trên backend. AI chỉ đề xuất; bạn kiểm tra trước khi tạo card.</p>
     {loading && !list && <p className="small muted">Đang tải danh sách task…</p>}
     <ErrorNotice error={error} />
     {list && <AnalysisNote analysis={list.analysis} aiCount={tasks.filter(t => t.origin === 'AI').length} />}

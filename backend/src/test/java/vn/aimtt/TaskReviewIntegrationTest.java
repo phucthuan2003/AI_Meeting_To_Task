@@ -98,12 +98,12 @@ class TaskReviewIntegrationTest {
         assertThat(evidence.get("sourceAvailable").asBoolean()).isTrue();
         assertThat(evidence.get("evidence").get(0).get("sourceLocator").has("rawStart")).isTrue();
 
-        // Confirm the proposed deadline and explicitly choose no assignee: warnings clear, provenance kept.
+        // Confirm the proposed deadline and choose no assignee. The historical due date may still warn.
         var confirmed = body(patch(token, id, Map.of("expectedVersion", 1, "deadlineDecision", "RESOLVED", "dueLocal", "2026-10-12T17:00",
                 "timezone", "Asia/Ho_Chi_Minh", "memberDecision", "NONE_SELECTED")).andExpect(status().isOk()));
         assertThat(confirmed.get("version").asLong()).isEqualTo(2);
         assertThat(confirmed.get("dueAt").asText()).isEqualTo("2026-10-12T10:00:00Z");
-        assertThat(confirmed.get("warnings")).isEmpty();
+        assertThat(codes(confirmed)).allMatch("DEADLINE_IN_PAST"::equals);
         assertThat(confirmed.get("readyForApproval").asBoolean()).isTrue();
         assertThat(confirmed.get("editedFields").toString()).contains("deadlineDecision", "memberDecision").doesNotContain("dueLocal", "taskName");
         assertThat(confirmed.get("aiSuggestion").get("assigneeRaw").asText()).isEqualTo("Mai");

@@ -22,6 +22,8 @@ final class TestDatabase {
         registry.add("app.cors-origins", () -> "chrome-extension://test-extension-id");
         registry.add("app.analysis.worker-enabled", () -> false);
         registry.add("app.audio.worker-enabled", () -> false);
+        // Cached Spring contexts share the test DB; none may race a test driving SyncRunner.
+        registry.add("app.sync.worker-enabled", () -> false);
         registry.add("app.llm.openai.api-key", () -> "");
         registry.add("app.llm.gemini.api-key", () -> "");
     }

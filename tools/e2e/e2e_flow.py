@@ -39,12 +39,14 @@ def main():
     ap.add_argument("--trello", default="http://127.0.0.1:9999")
     ap.add_argument("--shots", default="e2e-shots")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--chromium", help="Path to a compatible Chromium executable")
     args = ap.parse_args()
     os.makedirs(args.shots, exist_ok=True)
     admin(args.trello, "/__admin/reset", {})
     step = [0]
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(os.path.join(args.shots, "profile"), headless=not args.headed, channel="chromium",
+                                                       executable_path=args.chromium,
                                                        args=["--disable-extensions-except=" + args.ext, "--load-extension=" + args.ext],
                                                        viewport={"width": 400, "height": 900}, locale="vi-VN", timezone_id="Asia/Ho_Chi_Minh")
         worker = context.service_workers[0] if context.service_workers else context.wait_for_event("serviceworker", timeout=15000)
@@ -72,10 +74,10 @@ def main():
         page.get_by_label("Múi giờ").fill("Asia/Ho_Chi_Minh")
         page.get_by_label("Nội dung").fill(TRANSCRIPT)
         page.get_by_role("button", name="Lưu & xem preview").click()
-        expect(page.get_by_text("Input đã lưu trên backend")).to_be_visible(timeout=15000)
+        expect(page.get_by_text("Đã lưu nội dung.")).to_be_visible(timeout=15000)
         shot("preview")
         # 3. Analyse
-        page.get_by_label("Chọn AI").select_option("openai")
+        page.get_by_label("Dịch vụ phân tích").select_option("openai")
         page.get_by_role("button", name="Phân tích", exact=True).click()
         expect(page.get_by_role("heading", name="Hoàn thành màn hình đăng nhập")).to_be_visible(timeout=30000)
         expect(page.get_by_role("heading", name="Sửa Payment API")).to_be_visible()

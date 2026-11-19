@@ -39,7 +39,7 @@ export function TrelloConnection({ api, token, config, connection, onChanged, di
       <p className="small">Đã kết nối: <strong>{connection.fullName || connection.username || connection.trelloMemberId}</strong>
         {connection.username && <span className="muted"> @{connection.username}</span>} · {AUTH_LABELS[connection.authType] ?? connection.authType}</p>
       {connection.status !== 'ACTIVE' && <p className="notice error">Kết nối Trello đã hết quyền hoặc bị thu hồi. Kết nối lại để tạo card; bản nháp vẫn được giữ.</p>}
-    </> : <p className="small muted">Chưa kết nối Trello. Bạn vẫn review được; cần kết nối để tạo card.</p>}
+    </> : <p className="small muted">Chưa kết nối Trello.</p>}
     {(!connection || connection.status !== 'ACTIVE') && <>
       {!config.encryptionReady && <p className="notice">Backend chưa cấu hình TOKEN_ENCRYPTION_KEY nên chưa thể lưu kết nối Trello.</p>}
       {config.oauthAvailable && <button className="primary" disabled={locked || pending} onClick={() => run(async () => {
@@ -90,7 +90,7 @@ export function DestinationPicker({ api, token, meeting, connection, destination
   }, [editing, boardId, connection?.connectionId]);
   if (!connection || connection.status !== 'ACTIVE') return destination ? <p className="small">Đích: <strong>{destination.boardName} › {destination.listName}</strong></p> : null;
   if (!editing && destination) return <div className="destination">
-    <p className="small">Nơi tạo card: <strong>{destination.boardName} › {destination.listName}</strong> <span className="muted">· phiên bản đích {destination.version}</span></p>
+    <p className="small">Nơi tạo card: <strong>{destination.boardName} › {destination.listName}</strong></p>
     <button className="text" disabled={disabled || locked} onClick={() => setEditing(true)}>Đổi Board/List</button>
     {locked && <p className="small muted">Không đổi đích khi đang có card chờ tạo hoặc chờ đối soát.</p>}
   </div>;
@@ -109,7 +109,6 @@ export function DestinationPicker({ api, token, meeting, connection, destination
       <label>List<select value={listId} onChange={e => setListId(e.target.value)} required disabled={!boardId}>
         <option value="">Chọn List</option>{lists.map(list => <option key={list.id} value={list.id}>{list.name}</option>)}
       </select></label>
-      {destination && <p className="small muted">Đổi Board sẽ yêu cầu đối chiếu lại người phụ trách của các task chưa tạo card.</p>}
       <div className="actions"><button className="primary" type="submit" disabled={!boardId || !listId}>{busy ? 'Đang kiểm tra…' : 'Lưu nơi tạo card'}</button>
         {destination && <button type="button" onClick={() => setEditing(false)}>Hủy</button>}</div>
     </fieldset>

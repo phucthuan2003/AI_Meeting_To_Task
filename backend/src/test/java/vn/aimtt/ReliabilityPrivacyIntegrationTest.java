@@ -13,6 +13,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import vn.aimtt.job.AnalysisJob;
 import vn.aimtt.llm.LlmHttpTransport;
 import vn.aimtt.privacy.PrivacyService;
+import vn.aimtt.sync.CardPayloads;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -62,6 +63,9 @@ class ReliabilityPrivacyIntegrationTest extends IntegrationSupport {
         assertThat(privacy.runRetention()).isGreaterThanOrEqualTo(1);
         assertThat(leaks(meeting.id())).isZero();
         var task = tasks(token, meeting.id()).get("tasks").get(0);
+        var snapshotDesc = jdbc.queryForObject(
+                "select payload_json->>'desc' from task_snapshots where meeting_id = ?::uuid", String.class, meeting.id());
+        assertThat(snapshotDesc).endsWith(CardPayloads.DESCRIPTION_FOOTER + CardPayloads.marker(UUID.fromString(task.get("taskId").asText())));
         assertThat(task.get("syncStatus").asText()).isEqualTo("SYNCED");
         assertThat(task.get("trelloCardUrl").asText()).startsWith("https://trello.com/c/");
         assertThat(task.get("evidence").get(0).get("sourceAvailable").asBoolean()).isFalse();
