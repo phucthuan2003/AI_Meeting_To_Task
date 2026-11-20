@@ -43,13 +43,21 @@ public class TranscriptParser {
         if (file.getSize() > limits.maxUploadBytes()) throw tooLarge("FILE_TOO_LARGE", "File vượt giới hạn.");
         String name = Optional.ofNullable(file.getOriginalFilename()).orElse("").toLowerCase(Locale.ROOT);
         String mime = Optional.ofNullable(file.getContentType()).orElse("").toLowerCase(Locale.ROOT);
-        boolean txt = name.endsWith(".txt");
-        boolean docx = name.endsWith(".docx");
-        boolean vtt = name.endsWith(".vtt"), srt = name.endsWith(".srt");
-        if (!txt && !docx && !vtt && !srt) throw unsupported();
-        Set<String> accepted = vtt || srt ? Set.of("text/vtt", "application/x-subrip", "text/srt", "text/plain", "application/octet-stream", "") : txt ? Set.of("text/plain", "application/octet-stream", "")
-                : Set.of(DOCX_MIME, "application/octet-stream", "");
-        if (!accepted.contains(mime)) throw unsupported();
+        String ext = name.lastIndexOf('.') < 0 ? "" : name.substring(name.lastIndexOf('.') + 1);
+        boolean txt = Set.of("txt", "text", "md", "markdown").contains(ext);
+        boolean docx = ext.equals("docx");
+        boolean vtt = ext.equals("vtt"), srt = ext.equals("srt");
+        boolean document = DOCUMENTS.contains(ext);
+        if (!txt && !docx && !vtt && !srt && !document) throw unsupported();
+        if (document) {
+            // Browsers report many MIME types for these (or none); the bytes are checked below. Reject only media.
+            if (mime.startsWith("image/") || mime.startsWith("audio/") || mime.startsWith("video/")) throw unsupported();
+        } else {
+            Set<String> accepted = vtt || srt ? Set.of("text/vtt", "application/x-subrip", "text/srt", "text/plain", "application/octet-stream", "")
+                    : txt ? Set.of("text/plain", "text/markdown", "text/x-markdown", "application/octet-stream", "")
+                    : Set.of(DOCX_MIME, "application/octet-stream", "");
+            if (!accepted.contains(mime)) throw unsupported();
+        }
         try (var input = file.getInputStream()) {
             byte[] bytes = input.readNBytes(Math.toIntExact(limits.maxUploadBytes() + 1));
             if (bytes.length > limits.maxUploadBytes()) throw tooLarge("FILE_TOO_LARGE", "File vượt giới hạn.");
@@ -61,14 +69,74 @@ public class TranscriptParser {
             if (txt) {
                 String text = decodeUtf8(bytes);
                 checkTextSize(text.length());
-                return normalize("TXT", text, sourceLines(text, Map.of("sourceType", "TXT")), List.of());
+                String type = ext.startsWith("m") ? "MD" : "TXT";
+                return normalize(type, text, sourceLines(text, Map.of("sourceType", type)), List.of());
             }
-            return docx(bytes);
+            if (docx && !DocumentText.isZip(bytes) && (DocumentText.isOle2(bytes) || DocumentText.isRtf(bytes))) return document(bytes, "doc");
+            if (docx) return docx(bytes);
+            return document(bytes, ext);
         } catch (ApiException e) { throw e; }
         catch (IOException e) { throw invalidFile(); }
     }
 
+    private static final Set<String> DOCUMENTS = Set.of("pdf", "doc", "rtf", "odt", "html", "htm");
+
+    /**
+     * PDF, Word 97-2003, RTF, OpenDocument and HTML. The real format is decided by the file's bytes, so a ".doc" that
+     * Word saved as RTF/HTML (common) or a renamed DOCX still imports.
+     */
+    private ParsedTranscript document(byte[] bytes, String ext) {
+        int max = limits.maxExtractedChars();
+        try {
+            if (DocumentText.isPdf(bytes)) {
+                if (!ext.equals("pdf")) throw unsupported();
+                var blocks = DocumentText.pdf(bytes, max);
+                if (blocks.isEmpty()) throw new ApiException(HttpStatus.BAD_REQUEST, "NO_TEXT_LAYER",
+                        "PDF không có lớp chữ (có thể là bản scan ảnh). Chạy OCR hoặc dùng file DOCX/TXT.");
+                return fromBlocks("PDF", blocks, List.of());
+            }
+            if (ext.equals("pdf")) throw invalidFile();
+            if (DocumentText.isRtf(bytes)) return fromBlocks("RTF", DocumentText.rtf(bytes, max), List.of());
+            if (DocumentText.isOle2(bytes)) {
+                if (!ext.equals("doc")) throw unsupported();
+                return fromBlocks("DOC", DocumentText.doc(bytes, max), List.of());
+            }
+            if (DocumentText.isZip(bytes)) {
+                if (ext.equals("odt")) {
+                    preflightZip(bytes, "content.xml");
+                    return fromBlocks("ODT", DocumentText.odt(bytes, max, limits.maxZipEntryBytes()), List.of());
+                }
+                if (ext.equals("doc")) return docx(bytes); // DOCX renamed to .doc
+                throw invalidFile();
+            }
+            if (Set.of("html", "htm", "doc").contains(ext) && DocumentText.isHtml(bytes) || Set.of("html", "htm").contains(ext)) {
+                return fromBlocks("HTML", DocumentText.html(DocumentText.htmlText(bytes), max), List.of());
+            }
+            throw invalidFile();
+        } catch (ApiException e) { throw e; }
+        catch (DocumentText.TextLimit e) { throw tooLarge("TEXT_TOO_LARGE", "Transcript vượt giới hạn ký tự."); }
+        catch (Exception e) {
+            var failure = invalidFile();
+            failure.initCause(e);
+            throw failure;
+        }
+    }
+
+    private ParsedTranscript fromBlocks(String type, List<DocumentText.Block> blocks, List<String> warnings) {
+        var raw = new StringBuilder();
+        var sources = new ArrayList<SourceLine>();
+        for (var block : blocks) appendSource(raw, sources, block.text(), block.locator());
+        if (raw.toString().isBlank()) throw new ApiException(HttpStatus.BAD_REQUEST, "NO_BODY_TEXT", "File không có nội dung văn bản.");
+        return normalize(type, raw.toString(), sources, warnings);
+    }
+
     private String decodeUtf8(byte[] bytes) {
+        // Notepad "Unicode" files are UTF-16 with a BOM.
+        if (bytes.length >= 2 && ((bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xFE || (bytes[0] & 0xFF) == 0xFE && (bytes[1] & 0xFF) == 0xFF)) {
+            String text = new String(bytes, 2, bytes.length - 2, (bytes[0] & 0xFF) == 0xFF ? StandardCharsets.UTF_16LE : StandardCharsets.UTF_16BE);
+            if (text.indexOf('\0') >= 0) throw invalidFile();
+            return text;
+        }
         try {
             String text = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                     .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
@@ -81,7 +149,7 @@ public class TranscriptParser {
     }
 
     private ParsedTranscript docx(byte[] bytes) {
-        preflightZip(bytes);
+        preflightZip(bytes, "[Content_Types].xml", "word/document.xml");
         try (var pkg = OPCPackage.open(new ByteArrayInputStream(bytes)); var doc = new XWPFDocument(pkg)) {
             if (!MAIN_MIME.equals(doc.getPackagePart().getContentType())) throw unsupported();
             var raw = new StringBuilder();
@@ -142,7 +210,7 @@ public class TranscriptParser {
     }
 
     /** Reads actual inflated bytes, rather than trusting ZIP central-directory sizes. */
-    private void preflightZip(byte[] bytes) {
+    private void preflightZip(byte[] bytes, String... required) {
         if (bytes.length < 4 || bytes[0] != 'P' || bytes[1] != 'K') throw invalidFile();
         long total = 0;
         int count = 0;
@@ -163,7 +231,7 @@ public class TranscriptParser {
                 long compressed = entry.getCompressedSize();
                 if (size > 1024 && compressed > 0 && (double) compressed / size < limits.minInflateRatio()) throw zipLimit();
             }
-            if (!names.contains("[Content_Types].xml") || !names.contains("word/document.xml")) throw invalidFile();
+            for (String part : required) if (!names.contains(part)) throw invalidFile();
         } catch (ApiException e) { throw e; }
         catch (IOException e) { throw invalidFile(); }
     }
@@ -210,7 +278,7 @@ public class TranscriptParser {
         if (size > limits.maxExtractedChars()) throw tooLarge("TEXT_TOO_LARGE", "Transcript vượt giới hạn ký tự.");
     }
     private ApiException tooLarge(String code, String message) { return new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, code, message); }
-    private ApiException zipLimit() { return tooLarge("DOCX_ZIP_LIMIT", "DOCX vượt giới hạn giải nén."); }
-    private ApiException unsupported() { return new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "INVALID_FILE_TYPE", "Dùng file .txt, .docx, .vtt hoặc .srt hợp lệ."); }
+    private ApiException zipLimit() { return tooLarge("DOCX_ZIP_LIMIT", "File nén (DOCX/ODT) vượt giới hạn giải nén."); }
+    private ApiException unsupported() { return new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "INVALID_FILE_TYPE", "Dùng file .txt, .md, .docx, .doc, .pdf, .rtf, .odt, .html, .vtt hoặc .srt hợp lệ."); }
     private ApiException invalidFile() { return new ApiException(HttpStatus.BAD_REQUEST, "INVALID_FILE", "File hỏng, mã hóa hoặc không đúng cấu trúc."); }
 }

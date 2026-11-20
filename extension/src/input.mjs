@@ -11,9 +11,13 @@ export function pastePayload(draft, expectedVersion) {
   if (new TextEncoder().encode(JSON.stringify(input)).length > 1024 * 1024) throw new Error('JSON vượt 1 MiB. Hãy dùng file TXT.');
   return input;
 }
+/** Transcript files the backend can read (it checks the real content again). */
+export const TRANSCRIPT_EXTENSIONS = ['txt', 'md', 'docx', 'doc', 'pdf', 'rtf', 'odt', 'html', 'htm', 'vtt', 'srt'];
+export const TRANSCRIPT_ACCEPT = TRANSCRIPT_EXTENSIONS.map(ext => `.${ext}`).join(',');
 export function validateFile(file) {
-  if (!file) throw new Error('Chọn một file TXT, DOCX, VTT hoặc SRT.');
-  if (!/\.(txt|docx|vtt|srt)$/i.test(file.name)) throw new Error('Chỉ hỗ trợ TXT, VTT, SRT UTF-8 và DOCX.');
+  if (!file) throw new Error('Chọn một file PDF, Word, TXT, RTF, ODT, HTML, VTT hoặc SRT.');
+  const ext = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+  if (!TRANSCRIPT_EXTENSIONS.includes(ext)) throw new Error('Chỉ hỗ trợ PDF, DOCX, DOC, RTF, ODT, TXT, MD, HTML, VTT và SRT.');
   if (file.size > MAX_FILE) throw new Error('File vượt 10 MiB.');
 }
 export function validateCredentials(email, password) {
