@@ -34,12 +34,12 @@ public class JdkLlmHttpTransport implements LlmHttpTransport {
     }
     @Override public Response send(HttpRequest request, BooleanSupplier keepLease) {
         if (!keepLease.getAsBoolean()) throw new JobFailure("LEASE_LOST", false);
-        String host = String.valueOf(request.uri().getHost());
+        String bucket = rateLimitBucket(request);
         long deadline = System.nanoTime() + tuning.maxQueueWait().toNanos();
-        var limit = limits.computeIfAbsent(host, ignored -> new ProviderRateLimiter(tuning.requestsPerMinute(), tuning.tokensPerMinute()));
+        var limit = limits.computeIfAbsent(bucket, ignored -> new ProviderRateLimiter(tuning.requestsPerMinute(), tuning.tokensPerMinute()));
         // 1) minute budget / 429 cooldown, without holding a concurrency slot; 2) concurrency slot.
         admit(limit, ProviderRateLimiter.estimateTokens(request.bodyPublisher().map(HttpRequest.BodyPublisher::contentLength).orElse(0L)), keepLease, deadline);
-        var permit = permits.computeIfAbsent(host, ignored -> new Semaphore(tuning.maxConcurrentRequests(), true));
+        var permit = permits.computeIfAbsent(bucket, ignored -> new Semaphore(tuning.maxConcurrentRequests(), true));
         acquire(permit, keepLease, deadline);
         try {
             var response = dispatch(request, keepLease);
@@ -47,6 +47,13 @@ public class JdkLlmHttpTransport implements LlmHttpTransport {
                 limit.cooldown(ProviderRateLimiter.retryDelayNanos(response.retryAfter(), response.body(), tuning.rateLimitCooldown().toNanos()), System.nanoTime());
             return new Response(response.status(), response.body());
         } finally { permit.release(); }
+    }
+    private static String rateLimitBucket(HttpRequest request) {
+        String host = String.valueOf(request.uri().getHost());
+        String key = request.headers().firstValue("x-goog-api-key").orElse("");
+        if (key.isEmpty()) return host;
+        // Partition limits/permits per API key without retaining the raw secret in map keys.
+        return host + "#" + Integer.toHexString(key.hashCode());
     }
     /** Waits (lease kept alive) until the host's minute budget admits this request; bounded by max-queue-wait. */
     private void admit(ProviderRateLimiter limit, int tokens, BooleanSupplier keepLease, long deadline) {

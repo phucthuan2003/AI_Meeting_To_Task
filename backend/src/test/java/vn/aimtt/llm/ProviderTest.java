@@ -158,4 +158,75 @@ class ProviderTest {
             assertThat(requests).hasSize(before + 1);
         }
     }
+    @Test void geminiRotatesAndFailsOverToNextKeyOnTimeoutOrRateLimit() throws Exception {
+        var props = new LlmProperties(properties().openai(), new LlmProperties.Credentials("key-1, key-2, key-3", "gemini-3.5-flash-lite"),
+                java.time.Duration.ofSeconds(20), 49152, 4096);
+        var seenKeys = new ArrayList<String>();
+        LlmHttpTransport transport = (request, keepLease) -> {
+            String key = request.headers().firstValue("x-goog-api-key").orElseThrow();
+            seenKeys.add(key);
+            if (seenKeys.size() == 1) throw new JobFailure("PROVIDER_TIMEOUT", true);
+            try {
+                if (seenKeys.size() == 2) return new LlmHttpTransport.Response(429, json.writeValueAsBytes(Map.of("error", Map.of("status", "RESOURCE_EXHAUSTED"))));
+                return new LlmHttpTransport.Response(200, json.writeValueAsBytes(success("gemini")));
+            } catch (Exception failure) { throw new AssertionError(failure); }
+        };
+        var provider = new GeminiProvider(transport, props, json, LlmTuning.defaults(), 5000L);
+        var result = provider.extract(job("gemini"), "data", json.createObjectNode().put("type", "object"), () -> true);
+        assertThat(result.json()).isEqualTo(output());
+        assertThat(seenKeys).containsExactly("key-1", "key-2", "key-3");
+        provider.extract(job("gemini"), "data", json.createObjectNode().put("type", "object"), () -> true);
+        assertThat(seenKeys.get(3)).isEqualTo("key-3");
+    }
+    @Test void geminiStopsOnBadRequestAndThrowsLastErrorWhenAllKeysTimeout() {
+        var props = new LlmProperties(properties().openai(), new LlmProperties.Credentials("key-a,key-b", "gemini-3.5-flash-lite"),
+                java.time.Duration.ofSeconds(20), 49152, 4096);
+        var seen = new ArrayList<String>();
+        LlmHttpTransport timeoutTransport = (request, keepLease) -> {
+            seen.add(request.headers().firstValue("x-goog-api-key").orElseThrow());
+            throw new JobFailure("PROVIDER_TIMEOUT", true);
+        };
+        assertThatThrownBy(() -> new GeminiProvider(timeoutTransport, props, json, LlmTuning.defaults(), 5000L)
+                .extract(job("gemini"), "data", json.createObjectNode().put("type", "object"), () -> true))
+                .isInstanceOfSatisfying(JobFailure.class, e -> assertThat(e.code()).isEqualTo("PROVIDER_TIMEOUT"));
+        assertThat(seen).containsExactly("key-a", "key-b");
+
+        seen.clear();
+        LlmHttpTransport badRequestTransport = (request, keepLease) -> {
+            seen.add(request.headers().firstValue("x-goog-api-key").orElseThrow());
+            try { return new LlmHttpTransport.Response(400, json.writeValueAsBytes(Map.of("error", Map.of("status", "INVALID_ARGUMENT")))); }
+            catch (Exception failure) { throw new AssertionError(failure); }
+        };
+        assertThatThrownBy(() -> new GeminiProvider(badRequestTransport, props, json, LlmTuning.legacy(), 5000L)
+                .extract(job("gemini"), "data", json.createObjectNode().put("type", "object"), () -> true))
+                .isInstanceOfSatisfying(JobFailure.class, e -> assertThat(e.code()).isEqualTo("PROVIDER_REQUEST_REJECTED"));
+        assertThat(seen).hasSize(1);
+    }
+    @Test void geminiHedgesSlowRequestWithParallelKeyAndCancelsLoser() throws Exception {
+        var props = new LlmProperties(properties().openai(), new LlmProperties.Credentials("slow-key,fast-key", "gemini-3.5-flash-lite"),
+                java.time.Duration.ofSeconds(20), 49152, 4096);
+        var slowInterrupted = new java.util.concurrent.atomic.AtomicBoolean();
+        var seen = Collections.synchronizedList(new ArrayList<String>());
+        LlmHttpTransport transport = (request, keepLease) -> {
+            String key = request.headers().firstValue("x-goog-api-key").orElseThrow();
+            seen.add(key);
+            if ("slow-key".equals(key)) {
+                try { Thread.sleep(2000); } catch (InterruptedException interrupted) {
+                    slowInterrupted.set(true);
+                    throw new JobFailure("LEASE_LOST", false);
+                }
+            }
+            try { return new LlmHttpTransport.Response(200, json.writeValueAsBytes(success("gemini"))); }
+            catch (Exception failure) { throw new AssertionError(failure); }
+        };
+        var provider = new GeminiProvider(transport, props, json, LlmTuning.defaults(), 40L);
+        long startMs = System.currentTimeMillis();
+        var result = provider.extract(job("gemini"), "data", json.createObjectNode().put("type", "object"), () -> true);
+        long elapsedMs = System.currentTimeMillis() - startMs;
+        assertThat(result.json()).isEqualTo(output());
+        assertThat(elapsedMs).isLessThan(1000L);
+        assertThat(seen).containsExactly("slow-key", "fast-key");
+        Thread.sleep(50);
+        assertThat(slowInterrupted).isTrue();
+    }
 }
