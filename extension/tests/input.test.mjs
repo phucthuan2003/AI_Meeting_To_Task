@@ -19,6 +19,8 @@ test('UTF-16 text and UTF-8 JSON limits mirror backend boundaries', () => {
 test('file precheck rejects unsupported suffix/oversize; backend still validates actual content', () => {
   validateFile({ name: 'Meeting.DOCX', size: MAX_FILE });
   assert.throws(() => validateFile({ name: 'meeting.docm', size: 5 }), /Chỉ hỗ trợ/);
+  for (const name of ['a.pdf', 'b.DOC', 'c.rtf', 'd.odt', 'e.html', 'f.md']) validateFile({ name, size: 5 });
+  assert.throws(() => validateFile({ name: 'noext', size: 5 }), /Chỉ hỗ trợ/);
   assert.throws(() => validateFile({ name: 'meeting.txt', size: MAX_FILE + 1 }), /10 MiB/);
 });
 

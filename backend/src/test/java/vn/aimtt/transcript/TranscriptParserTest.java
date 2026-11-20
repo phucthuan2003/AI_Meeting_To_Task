@@ -85,6 +85,104 @@ class TranscriptParserTest {
         assertCode(() -> parser.file(docx("not a zip".getBytes())), "INVALID_FILE");
     }
 
+    private MockMultipartFile upload(String name, String mime, byte[] bytes) { return new MockMultipartFile("file", name, mime, bytes); }
+    private java.util.List<String> texts(ParsedTranscript result) { return result.segments().stream().map(ParsedTranscript.Segment::text).toList(); }
+
+    @Test void rtfKeepsUnicodeAndCodepageTextAndSkipsTables() {
+        String rtf = "{\\rtf1\\ansi\\ansicpg1252\\deff0{\\fonttbl{\\f0 Arial;}}{\\colortbl;\\red0\\green0\\blue0;}"
+                + "{\\*\\generator Word;}\\pard Nam: s\\u7917?a API caf\\'e9.\\par\n"
+                + "{\\field{\\*\\fldinst HYPERLINK \"x\"}{\\fldrslt Mai l\\u224?m login}}\\par }";
+        var result = parser.file(upload("meeting.rtf", "application/rtf", rtf.getBytes(StandardCharsets.ISO_8859_1)));
+        assertThat(result.sourceType()).isEqualTo("RTF");
+        assertThat(texts(result)).containsExactly("Nam: sửa API café.", "Mai làm login");
+        assertThat(result.segments().get(1).sourceLocator()).containsEntry("paragraphIndex", 1);
+    }
+
+    @Test void legacyDocSavedAsRtfOrHtmlStillImports() {
+        var rtf = parser.file(upload("old.doc", "application/msword", "{\\rtf1\\ansi Long: deploy.\\par}".getBytes(StandardCharsets.US_ASCII)));
+        assertThat(rtf.sourceType()).isEqualTo("RTF");assertThat(texts(rtf)).containsExactly("Long: deploy.");
+        var html = parser.file(upload("old.doc", "application/msword", "<html><body><p>Mai: test</p></body></html>".getBytes(StandardCharsets.UTF_8)));
+        assertThat(html.sourceType()).isEqualTo("HTML");assertThat(texts(html)).containsExactly("Mai: test");
+        assertCode(() -> parser.file(upload("old.doc", "application/msword", "random bytes".getBytes())), "INVALID_FILE");
+    }
+
+    @Test void htmlDropsScriptsStylesAndDecodesEntities() {
+        String html = "<!doctype html><html><head><title>x</title><style>p{}</style></head><body>"
+                + "<script>alert('x')</script><h1>Họp&nbsp;tuần</h1><p>Nam: s&#7917;a API &amp; login</p>"
+                + "<table><tr><td>Mai</td><td>&quot;deploy&quot;</td></tr></table><!-- note --></body></html>";
+        var result = parser.file(upload("meeting.html", "text/html", html.getBytes(StandardCharsets.UTF_8)));
+        assertThat(result.sourceType()).isEqualTo("HTML");
+        assertThat(texts(result)).containsExactly("Họp tuần", "Nam: sửa API & login", "Mai \"deploy\"");
+    }
+
+    @Test void odtParagraphsHeadingsSpacesAndTables() throws Exception {
+        String content = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\""
+                + " xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\">"
+                + "<office:body><office:text><text:h>Biên bản</text:h><text:p>Nam:<text:s/>sửa<text:s text:c=\"2\"/>API<text:note><text:note-body><text:p>chú thích</text:p></text:note-body></text:note></text:p>"
+                + "<table:table><table:table-row><table:table-cell><text:p>Mai làm login</text:p></table:table-cell></table:table-row></table:table>"
+                + "</office:text></office:body></office:document-content>";
+        try (var out = new ByteArrayOutputStream(); var zip = new ZipOutputStream(out)) {
+            zip.putNextEntry(new ZipEntry("mimetype")); zip.write("application/vnd.oasis.opendocument.text".getBytes()); zip.closeEntry();
+            zip.putNextEntry(new ZipEntry("content.xml")); zip.write(content.getBytes(StandardCharsets.UTF_8)); zip.closeEntry(); zip.finish();
+            var result = parser.file(upload("meeting.odt", "application/vnd.oasis.opendocument.text", out.toByteArray()));
+            assertThat(result.sourceType()).isEqualTo("ODT");
+            assertThat(texts(result)).containsExactly("Biên bản", "Nam: sửa API", "Mai làm login");
+        }
+        assertCode(() -> parser.file(upload("x.odt", "", "<?xml?><!DOCTYPE a [<!ENTITY e SYSTEM \"file:///etc/passwd\">]>".getBytes())), "INVALID_FILE");
+    }
+
+    @Test void markdownAndUtf16TextFiles() {
+        var md = parser.file(upload("notes.md", "text/markdown", "# Họp\n- Nam: sửa API".getBytes(StandardCharsets.UTF_8)));
+        assertThat(md.sourceType()).isEqualTo("MD");assertThat(texts(md)).containsExactly("# Họp", "- Nam: sửa API");
+        byte[] body = "Mai: làm login".getBytes(StandardCharsets.UTF_16LE), bom = new byte[body.length + 2];
+        bom[0] = (byte) 0xFF; bom[1] = (byte) 0xFE; System.arraycopy(body, 0, bom, 2, body.length);
+        assertThat(texts(parser.file(upload("u.txt", "text/plain", bom)))).containsExactly("Mai: làm login");
+    }
+
+    @Test void pdfRequiresPdfBytesAndRejectsMedia() {
+        assertCode(() -> parser.file(upload("meeting.pdf", "application/pdf", "not a pdf".getBytes())), "INVALID_FILE");
+        assertCode(() -> parser.file(upload("meeting.pdf", "image/png", "%PDF-1.4".getBytes())), "INVALID_FILE_TYPE");
+        assertCode(() -> parser.file(upload("photo.rtf", "text/rtf", "%PDF-1.4".getBytes())), "INVALID_FILE_TYPE");
+    }
+
+    /** Real PDFBox only (skipped when compiled against API stubs). */
+    @Test void pdfTextIsExtractedPerPageAndScannedPdfIsExplained() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(classExists("org.apache.pdfbox.pdmodel.PDPage"));
+        var result = parser.file(upload("meeting.pdf", "application/pdf", pdf("Nam: fix API", "Mai: login")));
+        assertThat(result.sourceType()).isEqualTo("PDF");
+        assertThat(texts(result)).containsExactly("Nam: fix API", "Mai: login");
+        assertThat(result.segments().get(1).sourceLocator()).containsEntry("pageIndex", 1);
+        assertCode(() -> parser.file(upload("scan.pdf", "application/pdf", pdf())), "NO_TEXT_LAYER");
+    }
+
+    private static boolean classExists(String name) {
+        try { Class.forName(name); return true; } catch (ClassNotFoundException e) { return false; }
+    }
+
+    /** Minimal valid PDF, one page per ASCII line (Helvetica). */
+    static byte[] pdf(String... pages) {
+        var objects = new java.util.ArrayList<String>();
+        int count = Math.max(1, pages.length);
+        StringBuilder kids = new StringBuilder();
+        for (int i = 0; i < count; i++) kids.append(4 + i * 2).append(" 0 R ");
+        objects.add("<< /Type /Catalog /Pages 2 0 R >>");
+        objects.add("<< /Type /Pages /Kids [" + kids + "] /Count " + count + " >>");
+        objects.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+        for (int i = 0; i < count; i++) {
+            String stream = pages.length == 0 ? "" : "BT /F1 12 Tf 72 720 Td (" + pages[i] + ") Tj ET";
+            objects.add("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents " + (5 + i * 2) + " 0 R >>");
+            objects.add("<< /Length " + stream.length() + " >>\nstream\n" + stream + "\nendstream");
+        }
+        var out = new StringBuilder("%PDF-1.4\n");
+        var offsets = new java.util.ArrayList<Integer>();
+        for (int i = 0; i < objects.size(); i++) { offsets.add(out.length()); out.append(i + 1).append(" 0 obj\n").append(objects.get(i)).append("\nendobj\n"); }
+        int xref = out.length();
+        out.append("xref\n0 ").append(objects.size() + 1).append("\n0000000000 65535 f \n");
+        for (int offset : offsets) out.append(String.format("%010d 00000 n \n", offset));
+        out.append("trailer\n<< /Size ").append(objects.size() + 1).append(" /Root 1 0 R >>\nstartxref\n").append(xref).append("\n%%EOF\n");
+        return out.toString().getBytes(StandardCharsets.ISO_8859_1);
+    }
+
     private MockMultipartFile docx(byte[] bytes) {
         return new MockMultipartFile("file", "meeting.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes);
     }

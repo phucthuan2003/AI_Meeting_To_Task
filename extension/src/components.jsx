@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MAX_TEXT, pastePayload, validateFile, validateCredentials } from './input.mjs';
+import { MAX_TEXT, pastePayload, validateFile, validateCredentials, TRANSCRIPT_ACCEPT } from './input.mjs';
 import Icon from './icons.jsx';
 
 export function ErrorNotice({ error }) {
@@ -106,8 +106,8 @@ export function InputForm({ initial, version, busy, onSave, onDirty, onCancel, m
         </div> : <label className="dropzone">
           <Icon name="upload" size={26} />
           <strong>{file ? file.name : 'Chọn file transcript'}</strong>
-          <span className="small muted">TXT, DOCX, VTT, SRT (UTF-8) · tối đa 10 MiB</span>
-          <input type="file" accept=".txt,.docx,.vtt,.srt" onChange={e => { setFile(e.target.files?.[0] ?? null); onDirty?.(); }} required />
+          <span className="small muted">PDF, Word (DOCX/DOC), RTF, ODT, TXT, MD, HTML, VTT, SRT · tối đa 10 MiB</span>
+          <input type="file" accept={TRANSCRIPT_ACCEPT} onChange={e => { setFile(e.target.files?.[0] ?? null); onDirty?.(); }} required />
         </label>}
         <label className="pill-field" title="Tên cuộc họp"><Icon name="edit" size={15} /><input maxLength={255} aria-label="Tên cuộc họp" value={draft.title}
           onChange={e => update('title', e.target.value)} placeholder="Tên cuộc họp (tuỳ chọn)" /></label>
