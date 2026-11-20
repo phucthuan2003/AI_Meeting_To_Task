@@ -32,4 +32,17 @@ class LlmConfigurationTest {
         assertThatThrownBy(()->new LlmProperties(new LlmProperties.Credentials("key","https://malicious.example"),defaults.gemini(),defaults.requestTimeout(),defaults.maxInputBytes(),4096)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(()->new LlmProperties(defaults.openai(),defaults.gemini(),Duration.ofSeconds(1000),defaults.maxInputBytes(),4096)).isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test void tuningAndWorkerPropertiesBindFromConfigurationWithDefaults() {
+        var empty = new org.springframework.boot.context.properties.bind.Binder(new org.springframework.boot.context.properties.source.MapConfigurationPropertySource(java.util.Map.of()));
+        var tuning = empty.bindOrCreate("app.llm.tuning", LlmTuning.class);
+        assertThat(tuning.geminiStructuredOutput()).isTrue(); assertThat(tuning.maxConcurrentRequests()).isEqualTo(4); assertThat(tuning.requestsPerMinute()).isZero();
+        var set = new org.springframework.boot.context.properties.bind.Binder(new org.springframework.boot.context.properties.source.MapConfigurationPropertySource(java.util.Map.of(
+                "app.llm.tuning.requests-per-minute", "15", "app.llm.tuning.tokens-per-minute", "250000", "app.llm.tuning.gemini-thinking-level", "minimal",
+                "app.analysis.workers.concurrency", "8")));
+        var bound = set.bindOrCreate("app.llm.tuning", LlmTuning.class);
+        assertThat(bound.requestsPerMinute()).isEqualTo(15); assertThat(bound.tokensPerMinute()).isEqualTo(250000); assertThat(bound.geminiThinkingLevel()).isEqualTo("minimal");
+        assertThat(set.bindOrCreate("app.analysis.workers", vn.aimtt.job.AnalysisWorkerProperties.class).concurrency()).isEqualTo(8);
+        assertThat(empty.bindOrCreate("app.analysis.workers", vn.aimtt.job.AnalysisWorkerProperties.class).autoRetry()).isTrue();
+    }
 }

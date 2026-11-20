@@ -26,7 +26,7 @@ class CaptureWorkerTest {
         when(llm.extract(any(),anyString(),any(),any(),anyString())).thenAnswer(call->{
             verify(store).checkpointStt(eq(lease),anyList());
             var source=json.readTree(call.getArgument(1,String.class)).path("segments").get(0);
-            String event="{\"events\":[{\"event_type\":\"CREATE\",\"task_ref\":\"task1\",\"sequence\":0,\"task_name\":\"Làm API\",\"assignee_raw\":\"Mai\",\"deadline_raw\":null,\"priority\":null,\"changed_fields\":[\"TASK\"],\"evidence_refs\":[{\"segment_id\":\"ID\",\"field\":\"TASK\"},{\"segment_id\":\"ID\",\"field\":\"ASSIGNEE\"}],\"ambiguities\":[]}]}".replace("ID",source.path("segmentId").asText());
+            String event="{\"events\":[{\"event_type\":\"CREATE\",\"task_ref\":\"task1\",\"sequence\":0,\"task_name\":\"Làm API\",\"assignee_raw\":\"Mai\",\"deadline_raw\":null,\"priority\":null,\"changed_fields\":[\"TASK\"],\"evidence_refs\":[{\"segment_id\":\"ID\",\"field\":\"TASK\"},{\"segment_id\":\"ID\",\"field\":\"ASSIGNEE\"}],\"ambiguities\":[]}]}".replace("ID",source.path("seq").asText());
             return new LlmProvider.Output(event,20L,30L,10);
         });worker.process(lease);
         verify(store).completeChunk(eq(lease),argThat(s->s.size()==1&&s.get(0).startMs()==15000),argThat(e->e.size()==1&&e.get(0).event().assignee_raw().equals("Mai")));

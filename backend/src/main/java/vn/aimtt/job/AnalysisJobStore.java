@@ -14,6 +14,7 @@ import vn.aimtt.task.TaskStore;
 
 @Repository
 public class AnalysisJobStore {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AnalysisJobStore.class);
     private final JdbcTemplate jdbc;
     private final AnalysisProperties properties;
     private final TaskStore tasks;
@@ -88,12 +89,16 @@ public class AnalysisJobStore {
     @Transactional
     public Optional<Lease> claim() {
         Instant now = now();
+        // Fair share across users: a job whose owner has nothing running goes first, then oldest first.
         var eligible = one("""
-                select * from analysis_jobs
-                where (status = 'QUEUED' and next_retry_at <= ?)
-                   or (status in ('PROCESSING','CANCEL_REQUESTED') and lease_expires_at <= ?)
-                order by created_at, id limit 1 for update skip locked
-                """, Timestamp.from(now), Timestamp.from(now));
+                select j.* from analysis_jobs j
+                where (j.status = 'QUEUED' and j.next_retry_at <= ?)
+                   or (j.status in ('PROCESSING','CANCEL_REQUESTED') and j.lease_expires_at <= ?)
+                order by (select count(*) from analysis_jobs p join meetings pm on pm.id = p.meeting_id
+                          where pm.user_id = (select jm.user_id from meetings jm where jm.id = j.meeting_id)
+                            and p.status = 'PROCESSING' and p.lease_expires_at > ?), j.created_at, j.id
+                limit 1 for update of j skip locked
+                """, Timestamp.from(now), Timestamp.from(now), Timestamp.from(now));
         if (eligible.isEmpty()) return Optional.empty();
         var job = eligible.get();
         if (job.status() == Status.CANCEL_REQUESTED) {
@@ -108,7 +113,26 @@ public class AnalysisJobStore {
                 update analysis_jobs set status = 'PROCESSING', stage = ?, lease_owner = ?, lease_expires_at = ?,
                 attempt_count = attempt_count + 1, updated_at = ? where id = ?
                 """, stage, owner, Timestamp.from(now.plus(properties.leaseDuration())), Timestamp.from(now), job.id());
+        // Queue wait = time a ready job waited for a worker (first attempt: since creation; retry: since its retry time).
+        Instant ready = job.attemptCount() == 0 || job.nextRetryAt() == null ? job.createdAt() : job.nextRetryAt();
+        if (ready != null) log.info("Analysis job claimed jobId={} attempt={} queueWaitMs={}", job.id(), job.attemptCount() + 1, Math.max(0, java.time.Duration.between(ready, now).toMillis()));
         return Optional.of(new Lease(job.id(), owner, job.attemptCount() + 1));
+    }
+    /**
+     * Transient provider failure: put the job back in the queue with a delay instead of failing it, while attempts
+     * remain (attempt_count is incremented by each claim). Preparation checkpoints are kept, so only the call is repeated.
+     */
+    @Transactional
+    public boolean requeue(Lease lease, String code, java.time.Duration delay) {
+        var job = locked(lease.jobId()); Instant now = now();
+        if (!usableLocked(job, lease, now)) return false;
+        if (job.attemptCount() >= job.attemptLimit()) return false;
+        jdbc.update("""
+                update analysis_jobs set status = 'QUEUED', stage = 'WAITING', lease_owner = null, lease_expires_at = null,
+                next_retry_at = ?, updated_at = ? where id = ?
+                """, Timestamp.from(now.plus(delay)), Timestamp.from(now), job.id());
+        log.info("Analysis job requeued jobId={} code={} attempt={} delayMs={}", job.id(), code, job.attemptCount(), delay.toMillis());
+        return true;
     }
     public SourceBatch source(AnalysisJob job, int after, int limit) {
         // A single SQL snapshot checks availability and reads only the pinned revision.

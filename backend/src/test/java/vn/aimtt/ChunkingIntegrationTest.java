@@ -54,7 +54,8 @@ class ChunkingIntegrationTest extends IntegrationSupport {
         data.path("known_tasks").forEach(t -> known.put(t.get("task_name").asText(), t.get("task_ref").asText()));
         var events = new ArrayList<String>();
         for (var seg : data.get("segments")) {
-            String id = seg.get("segmentId").asText(), text = seg.get("text").asText(); int seq = seg.get("sequence").asInt();
+            // Compact contract: segments are {seq, text}; evidence cites the seq as a string.
+            int seq = seg.get("seq").asInt(); String id = String.valueOf(seq), text = seg.get("text").asText();
             // A naive model re-emits the docs task from the overlap with a new ref: the backend must dedupe it.
             boolean inOverlap = seq <= overlap;
             if (inOverlap && !text.contains("Viết tài liệu")) continue;

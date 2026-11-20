@@ -60,9 +60,10 @@ public class AnalysisPipeline {
             boolean resumingChunks = store != null && lease != null && !store.chunks(job.id()).isEmpty();
             if (fits && !resumingChunks) {
                 if (!keepLease.getAsBoolean()) throw new JobFailure("LEASE_LOST", false);
-                var output = call(job, 0, () -> provider.extract(job, input, schema, keepLease));
-                if (!keepLease.getAsBoolean()) throw new JobFailure("LEASE_LOST", false);
-                return validator.validate(job, source, output);
+                return call(job, 0, source, () -> provider.extract(job, input, schema, keepLease), output -> {
+                    if (!keepLease.getAsBoolean()) throw new JobFailure("LEASE_LOST", false);
+                    return validator.validate(job, source, output);
+                });
             }
             if (!chunking.enabled() || store == null || lease == null) throw new JobFailure("TRANSCRIPT_OVER_BUDGET", false);
             return chunked(job, lease, source, schema, envelope, provider, keepLease);
@@ -70,13 +71,27 @@ public class AnalysisPipeline {
         catch (Exception failure) { throw new JobFailure("INTERNAL_JOB_ERROR", true); }
     }
 
-    private LlmProvider.Output call(AnalysisJob job, int chunk, Supplier<LlmProvider.Output> request) {
+    /**
+     * One provider call: compact segment refs are mapped back to UUIDs, then {@code check} validates the output.
+     * Every outcome is logged with its latency (SDS §7.9): FAILED = provider/transport error (time until the failure),
+     * INVALID = the provider answered but validation rejected it, OK = accepted.
+     */
+    private <T> T call(AnalysisJob job, int chunk, List<Extraction.Source> part, Supplier<LlmProvider.Output> request, Function<LlmProvider.Output, T> check) {
+        long start = System.nanoTime();
+        LlmProvider.Output output;
         try {
-            var output = request.get();
-            if (store != null) store.log(job, chunk, output.inputTokens(), output.outputTokens(), output.latencyMs(), "OK", null);
-            return output;
+            output = CompactSource.restoreIds(json, request.get(), part);
         } catch (JobFailure failure) {
-            if (store != null) store.log(job, chunk, null, null, null, "FAILED", failure.code());
+            if (store != null) store.log(job, chunk, null, null, (System.nanoTime() - start) / 1000000, "FAILED", failure.code());
+            throw failure;
+        }
+        try {
+            T value = check.apply(output);
+            if (store != null) store.log(job, chunk, output.inputTokens(), output.outputTokens(), output.latencyMs(), "OK", null);
+            return value;
+        } catch (JobFailure failure) {
+            if (store != null && !"LEASE_LOST".equals(failure.code()))
+                store.log(job, chunk, output.inputTokens(), output.outputTokens(), output.latencyMs(), "INVALID", failure.code());
             throw failure;
         }
     }
@@ -97,8 +112,8 @@ public class AnalysisPipeline {
             var part = source.subList(row.firstSequence(), row.lastSequence() + 1);
             var state = validator.reconcile(job, merged, null, null, 0);
             var known = state.candidates().stream().map(c -> {
-                var m = new LinkedHashMap<String, Object>(); m.put("task_ref", c.taskRef()); m.put("task_name", c.taskName());
-                m.put("assignee_raw", c.assigneeRaw()); m.put("deadline_raw", c.deadlineRaw()); return (Map<String, Object>) m;
+                // ref + name is enough to link UPDATE/CANCEL; assignee/deadline would be resent on every later part.
+                var m = new LinkedHashMap<String, Object>(); m.put("task_ref", c.taskRef()); m.put("task_name", c.taskName()); return (Map<String, Object>) m;
             }).toList();
             String data = data(job, part, Map.of("index", row.index(), "total", rows.size(), "overlap_until_sequence", row.overlapUntil()), trim(known));
             long bytes = data.getBytes(StandardCharsets.UTF_8).length;
@@ -107,9 +122,13 @@ public class AnalysisPipeline {
             for (var event : merged) if ("CREATE".equals(event.event().event_type())) knownRefs.add(event.event().task_ref());
             List<ExtractionValidator.Parsed> parsed; LlmProvider.Output result;
             try {
-                result = call(job, row.index(), () -> provider.extract(job, data, schema, keepLease, ExtractionPrompt.chunked()));
-                if (!keepLease.getAsBoolean()) throw new JobFailure("LEASE_LOST", false);
-                parsed = dedupe(validator.parse(part, result, knownRefs), merged, row.overlapUntil());
+                var holder = new LlmProvider.Output[1];
+                parsed = call(job, row.index(), part, () -> provider.extract(job, data, schema, keepLease, ExtractionPrompt.chunked()), output -> {
+                    if (!keepLease.getAsBoolean()) throw new JobFailure("LEASE_LOST", false);
+                    holder[0] = output;
+                    return dedupe(validator.parse(part, output, knownRefs), merged, row.overlapUntil());
+                });
+                result = holder[0];
             } catch (JobFailure failure) {
                 if ("LEASE_LOST".equals(failure.code())) throw failure;
                 store.chunkFailed(job.id(), row.index(), failure.code());
@@ -155,9 +174,29 @@ public class AnalysisPipeline {
     }
 
     /** Greedy split at segment boundaries; each part after the first starts with up to N already-covered overlap segments. */
+    /**
+     * Fewest parts the budget allows (each part is one provider request), then the parts are evened out: the smallest
+     * per-part budget that still yields the same number of parts is used, so no part is a near-empty tail and token use
+     * per request stays flat (no bursts against the key's tokens-per-minute).
+     */
     List<AnalysisJobStore.ChunkRow> plan(List<Extraction.Source> source) {
-        int budget = chunking.inputBytes() - chunking.knownTasksBytes(), n = source.size();
+        int budget = chunking.inputBytes() - chunking.knownTasksBytes();
         var sizes = source.stream().mapToInt(this::segmentBytes).toArray();
+        var greedy = plan(sizes, budget);
+        if (greedy.size() < 2) return greedy;
+        long total = 0; int largest = 0; for (int size : sizes) { total += size; largest = Math.max(largest, size); }
+        int low = (int) Math.max(largest, (total + greedy.size() - 1) / greedy.size()), high = budget;
+        List<AnalysisJobStore.ChunkRow> best = greedy;
+        while (low <= high) {
+            int mid = low + (high - low) / 2;
+            List<AnalysisJobStore.ChunkRow> candidate;
+            try { candidate = plan(sizes, mid); } catch (JobFailure tooSmall) { low = mid + 1; continue; }
+            if (candidate.size() <= greedy.size()) { best = candidate; high = mid - 1; } else low = mid + 1;
+        }
+        return best;
+    }
+    private List<AnalysisJobStore.ChunkRow> plan(int[] sizes, int budget) {
+        int n = sizes.length;
         var plan = new ArrayList<AnalysisJobStore.ChunkRow>();
         int next = 0; // first sequence not yet covered
         while (next < n) {
@@ -173,7 +212,8 @@ public class AnalysisPipeline {
         return plan;
     }
     private int segmentBytes(Extraction.Source s) {
-        try { return json.writeValueAsBytes(s).length + 1; } catch (Exception e) { return Integer.MAX_VALUE / 4; }
+        // Size of the compact form actually sent ({"seq":n,"text":...}), so parts are planned on real bytes.
+        try { return json.writeValueAsBytes(Map.of("seq", s.sequence(), "text", TextNormalizer.forModel(s.text()))).length + 1; } catch (Exception e) { return Integer.MAX_VALUE / 4; }
     }
     private List<Map<String, Object>> trim(List<Map<String, Object>> known) throws Exception {
         var list = new ArrayList<>(known);
@@ -181,10 +221,11 @@ public class AnalysisPipeline {
         return list;
     }
     private String data(AnalysisJob job, List<Extraction.Source> segments, Map<String, Object> part, List<Map<String, Object>> known) throws Exception {
-        var data = json.createObjectNode(); data.put("title", job.title()); data.put("meeting_date", job.meetingDate() == null ? null : job.meetingDate().toString());
-        data.put("timezone", job.timezone());
+        // Only what extraction needs: dates are never computed by the model (deadline_raw is copied), so meeting_date and
+        // timezone stay server-side; segments use the compact {seq, text} form (see CompactSource).
+        var data = json.createObjectNode(); if (job.title() != null && !job.title().isBlank()) data.put("title", TextNormalizer.forModel(job.title()));
         if (part != null) { data.set("part", json.valueToTree(part)); data.set("known_tasks", json.valueToTree(known)); }
-        data.set("segments", json.valueToTree(segments));
+        data.set("segments", CompactSource.segments(json, segments));
         return json.writeValueAsString(data);
     }
 }

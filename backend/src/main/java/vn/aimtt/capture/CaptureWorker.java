@@ -47,15 +47,15 @@ public class CaptureWorker {
                 if(!ExtractionPrompt.versionFor(s.provider()).equals(s.prompt())||!ExtractionPrompt.SCHEMA_VERSION.equals(s.schema())) throw new JobFailure("POLICY_VERSION_UNAVAILABLE",false);
                 var provider=providers.stream().filter(p->p.id().equals(s.provider())).findFirst().orElseThrow(()->new JobFailure("PROVIDER_NOT_CONFIGURED",false));
                 var state=validator.reconcile(store.snapshot(s),events,null,null,0);
-                var data=json.createObjectNode(); data.put("title",s.title()); data.put("meeting_date",s.date()==null?null:s.date().toString());data.put("timezone",s.timezone());
-                data.set("segments",json.valueToTree(fresh));data.set("known_tasks",json.valueToTree(state.candidates().stream().map(c->{
-                    var task=new LinkedHashMap<String,Object>();task.put("task_ref",c.taskRef());task.put("task_name",c.taskName());
-                    task.put("assignee_raw",c.assigneeRaw());task.put("deadline_raw",c.deadlineRaw());return task;
+                // Same compact contract as AnalysisPipeline: {seq,text} segments, no date context for the model.
+                var data=json.createObjectNode(); if(s.title()!=null&&!s.title().isBlank()) data.put("title",TextNormalizer.forModel(s.title()));
+                data.set("segments",CompactSource.segments(json,fresh));data.set("known_tasks",json.valueToTree(state.candidates().stream().map(c->{
+                    var task=new LinkedHashMap<String,Object>();task.put("task_ref",c.taskRef());task.put("task_name",c.taskName());return task;
                 }).toList()));
                 data.set("part",json.valueToTree(Map.of("index",s.processed()+1,"overlap_until_sequence",-1)));
                 JsonNode schema;try(var in=new ClassPathResource("llm/meeting-events-v1.schema.json").getInputStream()){schema=json.readTree(in);}
                 if(data.toString().getBytes(StandardCharsets.UTF_8).length>40000) throw new JobFailure("TRANSCRIPT_OVER_BUDGET",false);
-                var output=provider.extract(store.snapshot(s),data.toString(),schema,()->store.heartbeat(lease),ExtractionPrompt.chunked());
+                var output=CompactSource.restoreIds(json,provider.extract(store.snapshot(s),data.toString(),schema,()->store.heartbeat(lease),ExtractionPrompt.chunked()),fresh);
                 store.recordUsage(lease,output);
                 Set<String> known=new HashSet<>(); for(var item:events) if(item.event().event_type().equals("CREATE")) known.add(item.event().task_ref());
                 events.addAll(validator.parse(fresh,output,known));

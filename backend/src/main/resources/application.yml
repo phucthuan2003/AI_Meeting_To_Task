@@ -9,6 +9,9 @@ spring:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/ai_mtt}
     username: ${DATABASE_USER:ai_mtt}
     password: ${DATABASE_PASSWORD:}
+    hikari:
+      # Analysis workers, capture/sync workers and API requests share this pool; connections are held only briefly.
+      maximum-pool-size: ${DB_POOL_SIZE:20}
   jpa:
     open-in-view: false
     hibernate:
@@ -56,10 +59,25 @@ app:
     request-timeout: 60s
     max-input-bytes: 49152
     max-output-tokens: 4096
+    tuning:
+      # JSON mode (responseJsonSchema) for Gemini; a model that rejects it falls back to text mode once and is remembered.
+      gemini-structured-output: ${GEMINI_STRUCTURED_OUTPUT:true}
+      # Blank = model default. Gemini 3.x accepts minimal|low|medium|high; thinking tokens count against max-output-tokens.
+      gemini-thinking-level: ${GEMINI_THINKING_LEVEL:}
+      # In-flight requests per provider (shared API key) for this instance; extra jobs wait instead of hitting HTTP 429.
+      max-concurrent-requests: ${LLM_MAX_CONCURRENT:4}
+      max-queue-wait: 120s
+      # Client-side budget per provider for this instance; set to the API key's quota (0 = off). Requests wait for
+      # budget instead of being rejected with 429. After a 429 the provider is paused for its retry delay.
+      requests-per-minute: ${LLM_RPM:0}
+      tokens-per-minute: ${LLM_TPM:0}
+      rate-limit-cooldown: 20s
   chunking:
     enabled: ${CHUNKING_ENABLED:false}
-    input-bytes: ${CHUNK_INPUT_BYTES:24000}
-    overlap-segments: 2
+    # Each part is one provider request: large, evenly sized parts = fewer requests per transcript (rate limit).
+    # Segments are sent compactly ({seq,text}), so 40 KB holds far more transcript than before.
+    input-bytes: ${CHUNK_INPUT_BYTES:40000}
+    overlap-segments: ${CHUNK_OVERLAP_SEGMENTS:1}
     max-chunks: 20
     known-tasks-bytes: 4096
   retention:
@@ -78,6 +96,13 @@ app:
     preparation-batch-size: 100
     context-tokens: 131072
     reserved-tokens: 8192
+    workers:
+      # Analysis jobs processed at the same time by this instance (was 1).
+      concurrency: ${ANALYSIS_CONCURRENCY:4}
+      # Transient provider errors are requeued with exponential backoff while attempts remain (max-attempts).
+      auto-retry: ${ANALYSIS_AUTO_RETRY:true}
+      retry-base-delay: 5s
+      retry-max-delay: 60s
   trello:
     client-id: ${TRELLO_CLIENT_ID:}
     client-secret: ${TRELLO_CLIENT_SECRET:}

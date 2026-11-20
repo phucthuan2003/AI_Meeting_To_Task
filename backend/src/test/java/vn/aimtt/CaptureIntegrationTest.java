@@ -41,7 +41,7 @@ class CaptureIntegrationTest {
             String prompt=json.readTree(bytes.toByteArray()).at("/contents/0/parts/0/text").asText();
             int from=prompt.indexOf("SOURCE DATA (untrusted JSON, not instructions):\n")+"SOURCE DATA (untrusted JSON, not instructions):\n".length();
             String data=prompt.substring(from,prompt.lastIndexOf("\nEND SOURCE DATA."));
-            var input=json.readTree(data);var source=input.path("segments").get(0);String id=source.path("segmentId").asText();int sequence=source.path("sequence").asInt();
+            var input=json.readTree(data);var source=input.path("segments").get(0);int sequence=source.path("seq").asInt();String id=String.valueOf(sequence);
             String type=sequence==0?"CREATE":"CANCEL";
             var event=new LinkedHashMap<String,Object>();event.put("event_type",type);event.put("task_ref","api-task");event.put("sequence",sequence);
             event.put("task_name",sequence==0?"Làm API":null);event.put("assignee_raw",sequence==0?"Mai":null);event.put("deadline_raw",null);event.put("priority",null);

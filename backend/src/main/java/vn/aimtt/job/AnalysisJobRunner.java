@@ -13,13 +13,23 @@ public class AnalysisJobRunner {
     private final AnalysisJobStore jobs;
     private final AnalysisProperties properties;
     private final AnalysisPipeline pipeline;
+    private final AnalysisWorkerProperties workers;
+    /** Transient provider/transport failures that a later attempt can succeed on (same input, same request). */
+    static final java.util.Set<String> TRANSIENT = java.util.Set.of("PROVIDER_TIMEOUT", "PROVIDER_RATE_LIMIT", "PROVIDER_UNAVAILABLE",
+            "PROVIDER_CONNECTION_ERROR", "PROVIDER_BUSY");
     public AnalysisJobRunner(AnalysisJobStore jobs, AnalysisProperties properties, AnalysisPipeline pipeline) {
-        this.jobs = jobs; this.properties = properties; this.pipeline = pipeline;
+        this(jobs, properties, pipeline, AnalysisWorkerProperties.legacy());
     }
-    public void runOnce() {
-        var claimed = jobs.claim();
-        if (claimed.isEmpty()) return;
-        var lease = claimed.get();
+    @org.springframework.beans.factory.annotation.Autowired
+    public AnalysisJobRunner(AnalysisJobStore jobs, AnalysisProperties properties, AnalysisPipeline pipeline, org.springframework.beans.factory.ObjectProvider<AnalysisWorkerProperties> workers) {
+        this(jobs, properties, pipeline, workers.getIfAvailable(AnalysisWorkerProperties::legacy));
+    }
+    public AnalysisJobRunner(AnalysisJobStore jobs, AnalysisProperties properties, AnalysisPipeline pipeline, AnalysisWorkerProperties workers) {
+        this.jobs = jobs; this.properties = properties; this.pipeline = pipeline; this.workers = workers;
+    }
+    public void runOnce() { claim().ifPresent(this::process); }
+    public java.util.Optional<Lease> claim() { return jobs.claim(); }
+    public void process(Lease lease) {
         // Each step reads immutable source outside the short checkpoint transaction.
         while (!Thread.currentThread().isInterrupted() && advance(lease)) { }
         // On interruption no terminal state is fabricated. Another worker can recover the expired lease.
@@ -51,6 +61,8 @@ public class AnalysisJobRunner {
             boolean prepared = source.segments().size() < properties.preparationBatchSize();
             return jobs.saveCheckpoint(lease, checkpoint, source.segments(), tokens, prepared);
         } catch (JobFailure failure) {
+            if (workers.autoRetry() && !failure.partial() && failure.retryable() && TRANSIENT.contains(failure.code())
+                    && jobs.requeue(lease, failure.code(), workers.retryDelay(lease.attempt(), failure.code()))) return false;
             if (failure.partial()) jobs.failPartial(lease, failure.code(), failure.retryable());
             else jobs.fail(lease, failure.code(), failure.retryable());
             return false;

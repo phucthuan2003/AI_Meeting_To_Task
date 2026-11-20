@@ -79,8 +79,9 @@ public class ExtractionValidator {
             if (type.equals("CREATE") || type.equals("CANCEL") || task != null) needed.add("TASK");
             if (assignee != null) needed.add("ASSIGNEE"); if (deadline != null) needed.add("DEADLINE"); if (priority != null) needed.add("PRIORITY");
             require(supported.containsAll(needed));
-            require(assignee == null || quotes.stream().anyMatch(q -> q.field().equals("ASSIGNEE") && q.quote().contains(assignee)));
-            require(deadline == null || quotes.stream().anyMatch(q -> q.field().equals("DEADLINE") && q.quote().contains(deadline)));
+            // The model saw TextNormalizer.forModel(segment); compare in that space (NFC, collapsed spaces, case-insensitive).
+            require(assignee == null || quotes.stream().anyMatch(q -> q.field().equals("ASSIGNEE") && TextNormalizer.contains(q.quote(), assignee)));
+            require(deadline == null || quotes.stream().anyMatch(q -> q.field().equals("DEADLINE") && TextNormalizer.contains(q.quote(), deadline)));
             if (type.equals("CREATE")) require(!knownRefs.contains(ref) && created.add(ref));
             parsed.add(new Parsed(new Event(type, ref, sequence, task, assignee, deadline, priority, changed, refs, ambiguity), List.copyOf(quotes)));
         }

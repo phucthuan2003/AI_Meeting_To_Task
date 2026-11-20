@@ -46,4 +46,13 @@ class ChunkPlanTest {
         assertThat(result.get(0).event().task_ref()).isEqualTo("docs");
         assertThat(result.get(0).event().event_type()).isEqualTo("UPDATE");
     }
+
+    @Test void partsAreAsFewAsTheBudgetAllowsAndEvenlySized() {
+        // 25 segments of ~110 bytes: greedy at 2600 bytes would end with a tiny tail; balanced parts stay close in size.
+        var plan = pipeline(2600 + 512, 1).plan(source(25, 100));
+        var sizes = plan.stream().mapToInt(row -> row.lastSequence() - row.firstSequence() + 1).toArray();
+        assertThat(plan).hasSize(2);
+        assertThat(java.util.Arrays.stream(sizes).max().getAsInt() - java.util.Arrays.stream(sizes).min().getAsInt()).isLessThanOrEqualTo(2);
+        assertThat(plan.get(plan.size() - 1).lastSequence()).isEqualTo(24);
+    }
 }

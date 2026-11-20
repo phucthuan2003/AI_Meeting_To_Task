@@ -150,10 +150,15 @@ class ReliabilityPrivacyIntegrationTest extends IntegrationSupport {
         when(transport.send(any(), any())).thenAnswer(invocation -> { hosts.add(((HttpRequest) invocation.getArgument(0)).uri().getHost()); return new LlmHttpTransport.Response(503, "{}".getBytes()); });
         var job = ok(call(token, post("/api/v1/meetings/{id}/analysis-jobs", meeting.get("meetingId").asText()), Map.of("expectedInputVersion", meeting.get("inputVersion").asLong(), "providerId", "openai", "processingPolicyId", "llm-v1")));
         UUID jobId = UUID.fromString(job.get("jobId").asText());
-        for (int i = 0; i < 10 && jobs.get(jobId).status().active(); i++) analysis.runOnce();
+        // 503 is transient: the job is requeued with backoff (made due immediately here) until attempts run out, always on the same provider.
+        for (int i = 0; i < 10 && jobs.get(jobId).status().active(); i++) {
+            jdbc.update("update analysis_jobs set next_retry_at = now() where id = ? and status = 'QUEUED'", jobId);
+            analysis.runOnce();
+        }
         assertThat(jobs.get(jobId).status()).isEqualTo(AnalysisJob.Status.FAILED);
-        assertThat(hosts).isNotEmpty().allMatch("api.openai.com"::equals);
-        assertThat(jdbc.queryForObject("select count(*) from processing_logs where job_id = ? and status = 'FAILED' and error_code = 'PROVIDER_UNAVAILABLE'", Integer.class, jobId)).isEqualTo(1);
+        assertThat(jobs.get(jobId).errorCode()).isEqualTo("PROVIDER_UNAVAILABLE");
+        assertThat(hosts).hasSize(3).allMatch("api.openai.com"::equals);
+        assertThat(jdbc.queryForObject("select count(*) from processing_logs where job_id = ? and status = 'FAILED' and error_code = 'PROVIDER_UNAVAILABLE'", Integer.class, jobId)).isEqualTo(3);
     }
 
     @Test void logsNeverContainTranscriptTokensOrKeys(CapturedOutput output) throws Exception {

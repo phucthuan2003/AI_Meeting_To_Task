@@ -53,7 +53,10 @@ class AnalysisPipelineTest {
         when(provider.id()).thenReturn("openai");when(provider.extract(any(),anyString(),any(),any())).thenReturn(new LlmProvider.Output(output(),42L,50L,10));
         var result=pipeline.processPrepared(job("openai"),()->List.of(new Extraction.Source(SEGMENT,0,TEXT)),()->true);
         assertThat(result.candidates()).hasSize(1);
-        verify(provider).extract(any(),contains(SEGMENT.toString()),argThat(schema->schema.path("additionalProperties").asBoolean(true)==false),any());
+        // Compact input: the segment is sent as {"seq":0,...}; its UUID never leaves the server (it is restored before validation).
+        verify(provider).extract(any(),argThat((String data)->data.contains("\"seq\":0") && !data.contains(SEGMENT.toString()) && !data.contains("meeting_date")),
+                argThat(schema->schema.path("additionalProperties").asBoolean(true)==false),any());
+        assertThat(result.candidates().get(0).evidence()).allMatch(quote -> quote.segmentId().equals(SEGMENT));
     }
     @Test void lostLeaseOverBudgetAndUnknownSourceNeverDispatchToProvider() {
         when(provider.id()).thenReturn("openai");

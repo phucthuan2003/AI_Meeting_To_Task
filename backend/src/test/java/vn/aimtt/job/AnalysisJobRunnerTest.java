@@ -90,4 +90,38 @@ class AnalysisJobRunnerTest {
         assertThat(PreparationBudget.tokens(List.of(new SourceSegment(0, "\ud800")))).isEqualTo(escaped);
         assertThat(PreparationBudget.exceeds(processing, processing.contextTokens())).isTrue();
     }
+
+    @Test void transientProviderFailureIsRequeuedWithBackoffWhileAttemptsRemain() {
+        var retrying = new AnalysisJobRunner(store, properties(), pipeline, new AnalysisWorkerProperties(4, true, java.time.Duration.ofSeconds(5), java.time.Duration.ofSeconds(60)));
+        when(store.beginProvider(lease)).thenReturn(true);
+        when(store.checkpoint(JOB)).thenReturn(new Checkpoint(2, 3, 200, true));
+        when(pipeline.processPrepared(eq(processing), eq(lease), any(), any())).thenThrow(new JobFailure("PROVIDER_TIMEOUT", true));
+        when(store.requeue(eq(lease), eq("PROVIDER_TIMEOUT"), any())).thenReturn(true);
+        assertThat(retrying.advance(lease)).isFalse();
+        verify(store).requeue(eq(lease), eq("PROVIDER_TIMEOUT"), argThat(d -> d.toMillis() >= 5000 && d.toMillis() <= 6000));
+        verify(store, never()).fail(any(), any(), anyBoolean());
+        // No attempts left: the store refuses to requeue and the job fails with the original code.
+        when(store.requeue(eq(lease), eq("PROVIDER_TIMEOUT"), any())).thenReturn(false);
+        retrying.advance(lease);
+        verify(store).fail(lease, "PROVIDER_TIMEOUT", true);
+    }
+    @Test void invalidOutputAndPartialFailuresAreNeverAutoRetried() {
+        var retrying = new AnalysisJobRunner(store, properties(), pipeline, new AnalysisWorkerProperties(4, true, java.time.Duration.ofSeconds(5), java.time.Duration.ofSeconds(60)));
+        when(store.beginProvider(lease)).thenReturn(true);
+        when(store.checkpoint(JOB)).thenReturn(new Checkpoint(2, 3, 200, true));
+        when(pipeline.processPrepared(eq(processing), eq(lease), any(), any())).thenThrow(new JobFailure("PROVIDER_RESPONSE_INVALID", false))
+                .thenThrow(new JobFailure("PROVIDER_TIMEOUT", true, true)).thenThrow(new JobFailure("PROVIDER_OUTPUT_INCOMPLETE", true));
+        retrying.advance(lease); retrying.advance(lease); retrying.advance(lease);
+        verify(store, never()).requeue(any(), any(), any());
+        verify(store).fail(lease, "PROVIDER_RESPONSE_INVALID", false);
+        verify(store).failPartial(lease, "PROVIDER_TIMEOUT", true);
+        verify(store).fail(lease, "PROVIDER_OUTPUT_INCOMPLETE", true);
+    }
+    @Test void backoffGrowsAndIsCapped() {
+        var workers = new AnalysisWorkerProperties(4, true, java.time.Duration.ofSeconds(5), java.time.Duration.ofSeconds(60));
+        assertThat(workers.retryDelay(1, "PROVIDER_TIMEOUT").toMillis()).isBetween(5000L, 6000L);
+        assertThat(workers.retryDelay(2, "PROVIDER_TIMEOUT").toMillis()).isBetween(10000L, 12000L);
+        assertThat(workers.retryDelay(2, "PROVIDER_RATE_LIMIT").toMillis()).isBetween(30000L, 36000L);
+        assertThat(workers.retryDelay(9, "PROVIDER_TIMEOUT").toMillis()).isBetween(60000L, 72000L);
+    }
 }

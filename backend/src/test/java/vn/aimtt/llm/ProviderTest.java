@@ -115,4 +115,47 @@ class ProviderTest {
         assertThatThrownBy(()->new OpenAiProvider(transport,LlmProperties.defaults(),json).extract(job("openai"),"data",json.createObjectNode(),()->true)).isInstanceOf(JobFailure.class);
         assertThatThrownBy(()->new GeminiProvider(transport,LlmProperties.defaults(),json).extract(job("gemini"),"data",json.createObjectNode(),()->true)).isInstanceOf(JobFailure.class);
     }
+
+    LlmProvider jsonMode(java.util.function.Function<HttpRequest, Integer> status, Object response, LlmTuning tuning) {
+        LlmHttpTransport transport = (request, keepLease) -> {
+            requests.add(request);
+            try { return new LlmHttpTransport.Response(status.apply(request), json.writeValueAsBytes(response)); }
+            catch (Exception failure) { throw new AssertionError(failure); }
+        };
+        return new GeminiProvider(transport, properties(), json, tuning);
+    }
+    @Test void geminiJsonModeSendsAdaptedSchemaRulesAsSystemInstructionAndCountsThinking() throws Exception {
+        JsonNode schema;
+        try (var input = new org.springframework.core.io.ClassPathResource("llm/meeting-events-v1.schema.json").getInputStream()) { schema = json.readTree(input); }
+        var response = Map.of("candidates",List.of(Map.of("finishReason","STOP","content",Map.of("parts",List.of(Map.of("text",output()))))),
+                "usageMetadata", Map.of("promptTokenCount",42,"candidatesTokenCount",50,"thoughtsTokenCount",8));
+        var result = jsonMode(r -> 200, response, new LlmTuning(true, "minimal", 4, java.time.Duration.ofSeconds(5), 0, 0, java.time.Duration.ofSeconds(20)))
+                .extract(job("gemini"), "transcript-data", schema, () -> true, ExtractionPrompt.SYSTEM);
+        assertThat(result.outputTokens()).isEqualTo(58);
+        var body = json.readTree(requestBody(requests.get(0)));
+        assertThat(body.at("/generationConfig/responseMimeType").asText()).isEqualTo("application/json");
+        assertThat(body.at("/generationConfig/responseJsonSchema").toString()).doesNotContain("maxLength").contains("event_type");
+        assertThat(body.at("/generationConfig/thinkingConfig/thinkingLevel").asText()).isEqualTo("minimal");
+        assertThat(body.at("/systemInstruction/parts/0/text").asText()).isEqualTo(ExtractionPrompt.SYSTEM);
+        String user = body.at("/contents/0/parts/0/text").asText();
+        assertThat(user).contains("transcript-data").doesNotContain("JSON SCHEMA:", ExtractionPrompt.SYSTEM.substring(0, 40));
+    }
+    @Test void geminiJsonModeRejectedOnceFallsBackToTextAndIsRemembered() throws Exception {
+        var provider = jsonMode(r -> { try { return requestBody(r).contains("responseJsonSchema") ? 400 : 200; } catch (Exception e) { throw new AssertionError(e); } },
+                success("gemini"), new LlmTuning(true, "", 4, java.time.Duration.ofSeconds(5), 0, 0, java.time.Duration.ofSeconds(20)));
+        assertThat(provider.extract(job("gemini"), "data", json.createObjectNode().put("type","object"), () -> true).json()).isEqualTo(output());
+        assertThat(requests).hasSize(2);
+        assertThat(requestBody(requests.get(1))).contains("JSON SCHEMA:").doesNotContain("responseJsonSchema");
+        provider.extract(job("gemini"), "data", json.createObjectNode().put("type","object"), () -> true);
+        assertThat(requests).hasSize(3);
+        assertThat(requestBody(requests.get(2))).doesNotContain("responseJsonSchema");
+    }
+    @Test void geminiJsonModeDoesNotFallBackOnAuthOrRateLimitErrors() {
+        for (int status : List.of(401, 429, 500)) {
+            int before = requests.size();
+            assertThatThrownBy(() -> jsonMode(r -> status, Map.of("error", "x"), new LlmTuning(true, "", 4, java.time.Duration.ofSeconds(5), 0, 0, java.time.Duration.ofSeconds(20)))
+                    .extract(job("gemini"), "data", json.createObjectNode(), () -> true)).isInstanceOf(JobFailure.class);
+            assertThat(requests).hasSize(before + 1);
+        }
+    }
 }
