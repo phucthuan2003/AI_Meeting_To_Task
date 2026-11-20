@@ -50,7 +50,7 @@ def create_app(settings: Settings | None = None, engine_factory=SttEngine, analy
         engine.warmup()
         app.state.settings = config
         app.state.engine = engine
-        app.state.stt_slots = asyncio.Semaphore(1)
+        app.state.stt_slots = asyncio.Semaphore(config.stt_slots)
         app.state.stream_slots = asyncio.Semaphore(16)
         app.state.llm_slots = asyncio.Semaphore(4)
         analyzer = analyzer_factory(config.gemini_api_key, config.gemini_model) if config.gemini_api_key else None

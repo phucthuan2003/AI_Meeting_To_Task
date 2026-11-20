@@ -56,7 +56,6 @@ export function createApi(origin, { fetchImpl = fetch, onUnauthorized = async ()
     stopCapture: (token, id, chunkCount) => request(`/api/v1/captures/${encodeURIComponent(id)}/stop`, { method: 'POST', token, json: { chunkCount } }),
     cancelCapture: (token, id) => request(`/api/v1/captures/${encodeURIComponent(id)}/cancel`, { method: 'POST', token }),
     retryCapture: (token, id) => request(`/api/v1/captures/${encodeURIComponent(id)}/retry`, { method: 'POST', token }),
-    editLiveDraft: (token, id, input) => request(`/api/v1/captures/${encodeURIComponent(id)}/drafts`, { method: 'PATCH', token, json: input }),
     publishCapture: (token, id) => request(`/api/v1/captures/${encodeURIComponent(id)}/publish`, { method: 'POST', token }),
     health: () => request('/actuator/health'),
     register: (input) => request('/api/v1/auth/register', { method: 'POST', json: input }),

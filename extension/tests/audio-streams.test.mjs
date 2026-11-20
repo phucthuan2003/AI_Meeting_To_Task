@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { wavBytes, validateAudio, liveDraftPatch } from '../src/audio.mjs';
+import { wavBytes, validateAudio, hasAudioSignal } from '../src/audio.mjs';
 import { createSseParser, watchSnapshots } from '../src/streams.mjs';
 import { createApi } from '../src/api.mjs';
 
@@ -15,6 +15,21 @@ test('WAV chunks are independent RIFF/PCM files with correct sizes and bounded s
   assert.throws(()=>wavBytes(new Float32Array(1),0));
   assert.throws(()=>validateAudio({name:'a.txt',size:4}));
   assert.throws(()=>validateAudio({name:'a.wav',size:11*1024*1024}));
+});
+test('silence gate rejects silence, DC offset and tiny background noise', () => {
+  for (const rate of [16000, 44100, 48000]) {
+    assert.equal(hasAudioSignal(new Float32Array(rate), rate), false);
+    const noise = Float32Array.from({ length: rate }, (_, i) => 0.02 + (i % 2 ? 0.0002 : -0.0002));
+    assert.equal(hasAudioSignal(noise, rate), false);
+  }
+});
+test('a short quiet sound survives long silence without altering the samples', () => {
+  const rate = 48000, samples = new Float32Array(rate * 15);
+  for (let i = rate * 14; i < rate * 14.05; i++) samples[i] = 0.004 * Math.sin(i * 2 * Math.PI * 220 / rate);
+  const original = samples.slice();
+  assert.equal(hasAudioSignal(samples, rate), true);
+  assert.deepEqual(samples, original);
+  assert.equal(hasAudioSignal(samples.slice(rate * 14, rate * 14.01), rate), true);
 });
 test('SSE parser handles fragmented frames, CRLF, multiline data and heartbeat comments',()=>{
   const events=[],parse=createSseParser(e=>events.push(e));
@@ -38,11 +53,4 @@ test('audio write calls retain explicit sequence/count/key and never retry a los
   await assert.rejects(()=>api.uploadAudio('token','id',2,30000,new File(['x'],'a.wav')));
   assert.equal(count,1);assert.match(calls[0].url,/chunks\/2\?startMs=30000/);
   await api.stopCapture('token','id',3);assert.deepEqual(JSON.parse(calls[1].options.body),{chunkCount:3});
-});
-
-test('a title edit does not freeze an untouched assignee/deadline in live overrides',()=>{
-  const base={taskName:'API',assigneeRaw:'Mai',deadlineRaw:'ngày mai'};
-  assert.deepEqual(liveDraftPatch(base,{...base,taskName:'API đã sửa'}),{taskName:'API đã sửa'});
-  assert.deepEqual(liveDraftPatch(base,{...base,assigneeRaw:''}),{assigneeRaw:null});
-  assert.deepEqual(liveDraftPatch(base,base),{});
 });

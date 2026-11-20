@@ -49,6 +49,8 @@ app:
     intelligence-url: ${INTELLIGENCE_STT_URL:}
     intelligence-api-key: ${INTELLIGENCE_API_KEY:}
     worker-enabled: ${AUDIO_WORKER_ENABLED:true}
+    # Chunks transcribed at once. Keep 1 unless the STT service has more slots (STT_SLOTS on a GPU server).
+    worker-concurrency: ${CAPTURE_CONCURRENCY:1}
   llm:
     openai:
       api-key: ${OPENAI_API_KEY:}
@@ -73,7 +75,8 @@ app:
       tokens-per-minute: ${LLM_TPM:0}
       rate-limit-cooldown: 20s
   chunking:
-    enabled: ${CHUNKING_ENABLED:false}
+    # On: a long meeting transcript is analysed in a few large parts instead of failing with TRANSCRIPT_OVER_BUDGET.
+    enabled: ${CHUNKING_ENABLED:true}
     # Each part is one provider request: large, evenly sized parts = fewer requests per transcript (rate limit).
     # Segments are sent compactly ({seq,text}), so 40 KB holds far more transcript than before.
     input-bytes: ${CHUNK_INPUT_BYTES:40000}

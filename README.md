@@ -24,7 +24,7 @@ Cấu hình mới: `GROQ_API_KEY`, `STT_MODEL` (mặc định whisper-large-v3-t
 
 [Cấu hình Trello (14.5)](docs/ai-meeting-to-task/Trello_Setup.md) · [Test với Trello thật](docs/ai-meeting-to-task/Real_Trello_Test.md) · [Kịch bản demo với Trello giả](docs/ai-meeting-to-task/Demo_Script.md) · [Test toàn bộ 14.5–14.8](docs/ai-meeting-to-task/Full_Test_Guide.md) · [Đánh giá AI/usability](docs/ai-meeting-to-task/Evaluation_Guide.md) · [Browser E2E](tools/e2e/README.md).
 
-Biến mới: `TOKEN_ENCRYPTION_KEY` (bắt buộc để lưu kết nối Trello, 32 byte base64), `TRELLO_API_KEY` hoặc `TRELLO_CLIENT_ID/SECRET/CALLBACK_URL`, tùy chọn `CHUNKING_ENABLED` (mặc định false), `SYNC_WORKER_ENABLED`, `RETENTION_ENABLED`, `TRELLO_TIMEOUT`, `JOB_LEASE_SECONDS`.
+Biến mới: `TOKEN_ENCRYPTION_KEY` (bắt buộc để lưu kết nối Trello, 32 byte base64), `TRELLO_API_KEY` hoặc `TRELLO_CLIENT_ID/SECRET/CALLBACK_URL`, tùy chọn `CHUNKING_ENABLED` (mặc định true), `SYNC_WORKER_ENABLED`, `RETENTION_ENABLED`, `TRELLO_TIMEOUT`, `JOB_LEASE_SECONDS`.
 
 [Hướng dẫn cấu hình key và test AI thật](docs/ai-meeting-to-task/LLM_Setup.md). Khởi động lại backend để Flyway áp dụng V2/V3, build rồi Reload extension. [Job/poll/cancel/retry/restart](docs/ai-meeting-to-task/Analysis_Job_Test_Guide.md) vẫn có guide riêng. Worker mặc định bật; đặt ANALYSIS_WORKER_ENABLED=false khi cần quan sát QUEUED/cancel trong development.
 
@@ -172,3 +172,10 @@ Script khởi động JAR ở cổng 18080, dùng JWT key tạm sinh ngẫu nhi�
 Retention worker xóa nguồn sau hạn (`sourceExpiresAt`, giữ thêm 24 giờ khi job/sync còn chạy), log xử lý sau 90 ngày, session hết hạn sau 7 ngày. Rate limit vẫn giữ trong một process. Chunking mặc định tắt; chỉ bật khi đã đánh giá trên dataset. Chưa đủ điều kiện production: cần HTTPS, khóa bí mật quản lý tập trung và đánh giá AI thật trước demo ghi Trello thật.
 
 Phiên bản được khóa theo SDS: [Spring Boot 3.5 system requirements](https://docs.spring.io/spring-boot/3.5/system-requirements.html), [Apache POI parser protections](https://poi.apache.org/components/configuration.html), [Zonky embedded PostgreSQL](https://github.com/zonkyio/embedded-postgres).
+
+### Ghi âm tab: ghi âm → transcript → phân tích một lần
+
+Thu tab chỉ chạy nhận dạng giọng nói (STT) theo đoạn ~28 giây; không gọi LLM trong lúc họp. Khi bấm **Dừng thu & phân tích**, backend nhận dạng nốt đoạn cuối, tự lưu transcript thành meeting và xếp **một** job phân tích (có tự thử lại khi Gemini lỗi tạm thời). Nếu STT lỗi hẳn, phần transcript đã có vẫn lưu được bằng nút **Lưu phần transcript đã có**.
+
+Biến liên quan: `CAPTURE_CONCURRENCY` (backend, số đoạn nhận dạng cùng lúc, mặc định 1) và ở `meeting-intelligence-service`: `STT_SLOTS` (mặc định 1; chỉ tăng lên 2 khi chạy GPU còn dư bộ nhớ), `STT_QUEUE_WAIT_SECONDS` (mặc định 45). Hai giá trị `CAPTURE_CONCURRENCY` và `STT_SLOTS` nên bằng nhau. Mỗi cuộc họp chỉ nên có một người thu (bật micro) để tránh nhận dạng và tạo task trùng.
+

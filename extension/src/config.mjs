@@ -22,6 +22,8 @@ export function extensionManifest(origin) {
     permissions: ['storage', 'sidePanel', 'contextMenus', 'tabCapture', 'offscreen', 'activeTab'],
     host_permissions: [`${url.protocol}//${url.hostname}/*`],
     action: { default_title: 'Mở Meeting to Task' },
+    // Same as clicking the icon: opens the panel and grants activeTab for tab recording.
+    commands: { _execute_action: { suggested_key: { default: 'Ctrl+Shift+Y', mac: 'Command+Shift+Y' }, description: 'Mở Meeting to Task trên tab này' } },
     side_panel: { default_path: 'sidepanel.html' },
     background: { service_worker: 'service-worker.js', type: 'module' },
     content_security_policy: {

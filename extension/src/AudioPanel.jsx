@@ -1,38 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ErrorNotice } from './components.jsx';
-import { validateAudio, CAPTURE_STATE, liveDraftPatch } from './audio.mjs';
+import { validateAudio, CAPTURE_STATE } from './audio.mjs';
 import { watchSnapshots } from './streams.mjs';
 import { createStorage } from './storage.mjs';
 import Icon from './icons.jsx';
 
-const CAPTURE_LABELS = { OPEN: 'Đang mở', DRAINING: 'Đang xử lý đoạn cuối', READY: 'Sẵn sàng chốt', FAILED: 'Xử lý lỗi', PUBLISHED: 'Đã lưu thành meeting', CANCELLED: 'Đã hủy' };
+const CAPTURE_LABELS = { OPEN: 'Đang mở', DRAINING: 'Đang nhận dạng đoạn cuối', READY: 'Sẵn sàng lưu', FAILED: 'Nhận dạng lỗi', PUBLISHED: 'Đã lưu thành meeting', CANCELLED: 'Đã hủy' };
 const clock = seconds => `${String(Math.floor((seconds ?? 0) / 60)).padStart(2, '0')}:${String(Math.floor((seconds ?? 0) % 60)).padStart(2, '0')}`;
-
-function LiveDraft({ proposal, override, version, onSave, onDirty }) {
-  const [draft,setDraft]=useState(null),[error,setError]=useState(null),[busy,setBusy]=useState(false);
-  useEffect(()=>{ onDirty(Boolean(draft)); return ()=>onDirty(false); },[Boolean(draft)]);
-  const displayed={...proposal,...override};
-  return <div className="live-task">
-    <div className="live-task-head"><span className="dot" /><strong>{displayed.taskName}</strong>
-      <span className="tiny muted">{displayed.assigneeRaw || 'Chưa rõ người'} · {displayed.deadlineRaw || 'Chưa rõ hạn'}</span></div>
-    {override && <p className="tiny notice">Đề xuất gốc có thể thay đổi trong lúc thu. Phần bạn sửa được giữ khi chốt nếu công việc vẫn còn trong danh sách.</p>}
-    <details className="evidence"><summary><Icon name="quote" size={13} />Bằng chứng</summary>{proposal.evidence.map((e,i)=><blockquote className="quote" key={i}><p>{e.quote}</p></blockquote>)}</details>
-    {!draft ? <button className="link-button" onClick={()=>setDraft({ expectedVersion:version, base:{taskName:displayed.taskName,assigneeRaw:displayed.assigneeRaw??'',deadlineRaw:displayed.deadlineRaw??''}, taskName:displayed.taskName,assigneeRaw:displayed.assigneeRaw??'',deadlineRaw:displayed.deadlineRaw??'' })}>Sửa bản nháp live</button> : <form className="live-edit" onSubmit={async e=>{
-      e.preventDefault();setBusy(true);setError(null);
-      try {const patch=liveDraftPatch(draft.base,draft);
-        if(Object.keys(patch).length)await onSave({expectedVersion:draft.expectedVersion,taskRef:proposal.taskRef,patch});setDraft(null);}
-      catch(err){setError(err);}finally{setBusy(false);}
-    }}>
-      <label>Tên việc<input required maxLength={255} value={draft.taskName} onChange={e=>setDraft({...draft,taskName:e.target.value})}/></label>
-      <div className="columns">
-        <label>Người phụ trách<input maxLength={255} value={draft.assigneeRaw} onChange={e=>setDraft({...draft,assigneeRaw:e.target.value})}/></label>
-        <label>Hạn nguyên văn<input maxLength={255} value={draft.deadlineRaw} onChange={e=>setDraft({...draft,deadlineRaw:e.target.value})}/></label>
-      </div>
-      <ErrorNotice error={error}/>{error?.status===409&&<button type="button" onClick={()=>{setDraft({...draft,expectedVersion:version});setError(null);}}>Giữ bản sửa và dùng phiên bản mới nhất</button>}
-      <div className="actions"><button className="primary" disabled={busy}>Lưu bản sửa</button><button type="button" onClick={()=>setDraft(null)}>Bỏ sửa</button></div>
-    </form>}
-  </div>;
-}
 
 export default function AudioPanel({ api, session, onOpenMeeting, onDirty = () => {}, tabs }) {
   const token=session.accessToken, origin=session.origin;
@@ -42,9 +16,10 @@ export default function AudioPanel({ api, session, onOpenMeeting, onDirty = () =
   const [mode,setMode]=useState('LIVE'),[provider,setProvider]=useState(''),[policies,setPolicies]=useState([]);
   const [title,setTitle]=useState(''),[date,setDate]=useState(''),[zone,setZone]=useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const [microphone,setMicrophone]=useState(true),[file,setFile]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(null),[note,setNote]=useState('');
-  const [dirtyCount,setDirtyCount]=useState(0);
-  const draftRefs=useRef(new Set());
   useEffect(()=>()=>onDirty(false),[]);
+  // Live: the backend saves the meeting and queues one analysis job when the last chunk is transcribed.
+  // Open it once, only for a transition seen in this panel (restoring an old published session does not jump).
+  const lastStatus=useRef(null);
   const pending=useRef(null), mounted=useRef(true);
   async function action(fn) {
     setBusy(true);setError(null);
@@ -73,6 +48,11 @@ export default function AudioPanel({ api, session, onOpenMeeting, onDirty = () =
     });
     return()=>stream.stop();
   },[capture?.id,token]);
+  useEffect(()=>{
+    const before=lastStatus.current; lastStatus.current=capture ? `${capture.id}:${capture.status}` : null;
+    if(capture?.mode==='LIVE'&&capture.status==='PUBLISHED'&&capture.meetingId&&before&&before.startsWith(capture.id+':')&&before!==`${capture.id}:PUBLISHED`)
+      onOpenMeeting(capture.meetingId);
+  },[capture?.id,capture?.status,capture?.meetingId]);
   async function remember(value){setCapture(value);setSessions(old=>old.some(item=>item.id===value.id)?old:[{id:value.id,mode:value.mode,status:value.status},...old]);await chrome.storage.local.set({[pointer]:value.id});}
   async function create() {
     if(mode==='FILE')validateAudio(file);
@@ -99,14 +79,18 @@ export default function AudioPanel({ api, session, onOpenMeeting, onDirty = () =
   const actions = [];
   if (!fresh) {
     if(capture.status==='OPEN'&&capture.mode==='LIVE'){
-      if (recording) actions.push(<button key="stop" className="primary full big" disabled={busy} onClick={()=>action(()=>control('stop'))}><Icon name="stop" size={16}/>Dừng thu & gửi đoạn cuối</button>);
+      if (recording) actions.push(<button key="stop" className="primary full big" disabled={busy} onClick={()=>action(()=>control('stop'))}><Icon name="stop" size={16}/>Dừng thu & phân tích</button>);
       else actions.push(<button key="start" className="primary full big" disabled={busy||capture.nextSequence>0} onClick={()=>action(begin)}><Icon name="mic" size={16}/>Bắt đầu thu tab đang mở</button>);
       if (!recording && capture.nextSequence>0) actions.push(<button key="stop2" className="full" disabled={busy} onClick={()=>action(()=>control('stop'))}>Dừng thu & gửi đoạn cuối</button>);
       actions.push(<button key="seal" className="quiet full" disabled={busy} onClick={()=>action(async()=>{if(!window.confirm('Chỉ chốt các đoạn backend đã nhận? Phần audio chưa gửi có thể không được đưa vào.'))return;await control('cancel').catch(()=>{});setCapture(await api.stopCapture(token,capture.id,capture.nextSequence));})}>Chốt các đoạn đã nhận</button>);
     }
     if(local?.id===capture.id&&local?.state==='ERROR') actions.push(<button key="resend" className="full" disabled={busy} onClick={()=>action(()=>control('retry'))}>Gửi lại đoạn đang chờ</button>);
-    if(capture.status==='FAILED') actions.push(<button key="retry" className="primary full big" disabled={busy} onClick={()=>action(async()=>{await control('stop').catch(()=>{});setCapture(await api.retryCapture(token,capture.id));})}>Thử lại xử lý backend</button>);
-    if(capture.status==='READY') actions.push(<button key="publish" className="primary full big" disabled={busy||dirtyCount>0} onClick={()=>action(async()=>{const value=await api.publishCapture(token,capture.id);setCapture(await api.capture(token,capture.id));onOpenMeeting(value.meetingId);})}><Icon name="sparkle" size={16}/>Chốt & lưu thành meeting để review</button>);
+    if(capture.status==='FAILED'&&capture.sources.length>0) actions.push(<button key="save-partial" className="primary full big" disabled={busy} onClick={()=>action(async()=>{
+      if(!window.confirm('Lưu phần transcript đã nhận dạng thành meeting? Các đoạn audio chưa nhận dạng sẽ bị bỏ.'))return;
+      await control('cancel').catch(()=>{});const value=await api.publishCapture(token,capture.id);setCapture(await api.capture(token,capture.id));if(capture.mode!=='LIVE')onOpenMeeting(value.meetingId);})}>
+      <Icon name="check" size={16}/>Lưu phần transcript đã có</button>);
+    if(capture.status==='FAILED') actions.push(<button key="retry" className={capture.sources.length>0?'full':'primary full big'} disabled={busy} onClick={()=>action(async()=>{await control('stop').catch(()=>{});setCapture(await api.retryCapture(token,capture.id));})}>Thử lại nhận dạng</button>);
+    if(capture.status==='READY') actions.push(<button key="publish" className="primary full big" disabled={busy} onClick={()=>action(async()=>{const value=await api.publishCapture(token,capture.id);setCapture(await api.capture(token,capture.id));if(capture.mode!=='LIVE')onOpenMeeting(value.meetingId);})}><Icon name="sparkle" size={16}/>{capture.mode==='LIVE'?'Lưu transcript & phân tích':'Lưu thành meeting để phân tích'}</button>);
     if(capture.meetingId) actions.push(<button key="open" className="primary full big" onClick={()=>onOpenMeeting(capture.meetingId)}>Mở meeting đã lưu<Icon name="arrow" size={16}/></button>);
     if(capture.status==='PUBLISHED') actions.push(<button key="new" className="full" onClick={()=>{setCapture(null);chrome.storage.local.remove(pointer);}}>Phiên mới</button>);
     actions.push(<div key="minor" className="actions center">
@@ -129,7 +113,7 @@ export default function AudioPanel({ api, session, onOpenMeeting, onDirty = () =
         </div>
         {mode==='FILE'?<label className="dropzone"><Icon name="upload" size={24}/><strong>{file?file.name:'Chọn file ghi âm'}</strong><span className="tiny muted">Tối đa 10 MiB</span>
           <input type="file" accept=".wav,.mp3,.m4a,.webm" onChange={e=>setFile(e.target.files?.[0]??null)}/></label>:<>
-          <label>Dịch vụ phân tích<select value={provider} onChange={e=>setProvider(e.target.value)}><option value="">Chọn dịch vụ</option>{policies.map(p=><option key={p.providerId} value={p.providerId}>{p.displayName}</option>)}</select></label>
+          <label>Dịch vụ phân tích (chạy một lần sau khi dừng)<select value={provider} onChange={e=>setProvider(e.target.value)}><option value="">Chọn dịch vụ</option>{policies.map(p=><option key={p.providerId} value={p.providerId}>{p.displayName}</option>)}</select></label>
           <div className="setting-row"><Icon name="mic" size={16}/><span className="row-main small">Kèm microphone</span>
             <label className="switch"><input type="checkbox" checked={microphone} onChange={e=>setMicrophone(e.target.checked)} aria-label="Kèm microphone"/><span /></label></div>
           <button type="button" className="link-button" onClick={()=>chrome.tabs.create({url:chrome.runtime.getURL('microphone.html')})}>Cấp quyền microphone</button>
@@ -144,34 +128,29 @@ export default function AudioPanel({ api, session, onOpenMeeting, onDirty = () =
         <span className="rec-time">{clock(local?.id===capture.id?local.capturedSeconds:0)}</span>
         <span className="small muted">{recording ? (microphone ? 'Đang nghe tab và micro' : 'Đang nghe tab') : CAPTURE_LABELS[capture.status] ?? capture.status}</span>
         {recording && <div className="wave" aria-hidden="true">{Array.from({length:14},(_,i)=><span key={i} style={{animationDelay:`${(i*97)%500}ms`}}/>)}</div>}
-        <p className="small"><strong>{capture.status}</strong> · Đã xử lý {capture.processedSequence+1}/{capture.nextSequence} đoạn</p>
+        <p className="small"><strong>{capture.status}</strong> · Đã nhận dạng {capture.processedSequence+1}/{capture.nextSequence} đoạn</p>
+        {capture.pendingChunks>0&&<p className="tiny muted">Đang chờ nhận dạng {capture.pendingChunks} đoạn{capture.pendingChunks>2?' · máy chủ đang bận, transcript sẽ có sau ít phút':''}</p>}
         {local?.id===capture.id&&<p className="tiny muted">Thu: {local.state} · đã thu {local.capturedSeconds}s · còn {local.queued} đoạn chờ {local.error}</p>}
         <p className="tiny muted break mono">Session: {capture.id}</p>
       </div>}
     </section>
 
     {!fresh && <>
-      {capture.warnings?.map((warning,i)=><p className="notice warn" key={i}>{warning}</p>)}
-      {capture.errorCode&&<p className="notice error">{capture.errorCode} · Không tự gửi lại request lỗi. Kiểm tra cấu hình/quota; retry có thể phát sinh phí.</p>}
+      {capture.errorCode&&<p className="notice error">{capture.errorCode} · Nhận dạng giọng nói bị lỗi sau nhiều lần thử. Transcript đã nhận dạng vẫn được giữ: thử lại{capture.sources.length>0?' hoặc lưu phần đã có':''}.</p>}
+      {capture.status==='READY'&&capture.sources.length===0&&<p className="notice warn">Không nhận dạng được lời nói nào. Kiểm tra âm thanh tab/micro rồi tạo phiên mới.</p>}
       {capture.status==='OPEN'&&capture.mode==='FILE'&&<section className="card"><label className="dropzone"><Icon name="upload" size={22}/><strong>{file?file.name:'Chọn lại file'}</strong>
         <input type="file" accept=".wav,.mp3,.m4a,.webm" onChange={e=>setFile(e.target.files?.[0]??null)}/></label>
         <button className="full" disabled={busy||!file} onClick={()=>action(async()=>{validateAudio(file);await api.uploadAudio(token,capture.id,0,0,file);setCapture(await api.stopCapture(token,capture.id,1));})}>Gửi lại cùng file / chốt upload</button></section>}
       {capture.sources.length>0&&<section className="card">
         <div className="section-label"><span><span className="dot"/> Lời thoại trực tiếp</span><span className="tiny muted">{capture.sources.length} đoạn</span></div>
-        <div className="live-lines">{capture.sources.slice(-4).map((s,i,all)=><div key={s.segmentId} className={`live-line${i===all.length-1?' latest':''}`}>
+        <div className="live-lines">{capture.sources.slice(-6).map((s,i,all)=><div key={s.segmentId} className={`live-line${i===all.length-1?' latest':''}`}>
           <span className="tiny muted">[{(s.startMs/1000).toFixed(2)}s]</span><p className="small">{s.text}</p></div>)}</div>
         <details className="evidence"><summary>Transcript STT ({capture.sources.length} đoạn)</summary>{capture.sources.map(s=><p className="small" key={s.segmentId}>{(s.startMs/1000).toFixed(2)}s — {s.text}</p>)}</details>
       </section>}
-      {capture.mode==='LIVE'&&<section className="card">
-        <div className="section-label"><span><Icon name="sparkle" size={14}/> Việc AI đang nghe thấy</span><span className="pill idle">{capture.proposals.length} tác vụ</span></div>
-        {capture.proposals.map(p=><LiveDraft key={p.taskRef} proposal={p} override={capture.overrides[p.taskRef]} version={capture.version}
-          onDirty={dirty=>{if(dirty)draftRefs.current.add(p.taskRef);else draftRefs.current.delete(p.taskRef);setDirtyCount(draftRefs.current.size);onDirty(draftRefs.current.size>0);}}
-          onSave={async input=>setCapture(await api.editLiveDraft(token,capture.id,input))}/>)}
-        {Object.keys(capture.overrides).some(ref=>!capture.proposals.some(p=>p.taskRef===ref))&&
-          <p className="notice warn">Một số công việc bạn đã sửa không còn trong danh sách. Kiểm tra và thêm lại thủ công nếu cần.</p>}
-        <p className="tiny muted center">Đề xuất tạm — bạn sẽ duyệt và sửa sau khi chốt.</p>
+      {capture.mode==='LIVE'&&!['PUBLISHED','CANCELLED'].includes(capture.status)&&<section className="card">
+        <div className="section-label"><span><Icon name="sparkle" size={14}/> Phân tích công việc</span><span className="pill idle">Sau khi dừng</span></div>
+        <p className="small muted">Trong lúc họp chỉ chuyển lời nói thành văn bản. Khi bạn dừng thu, transcript được lưu thành meeting và AI phân tích một lần để tạo danh sách việc.</p>
       </section>}
-      {dirtyCount>0&&<p className="notice warn">Lưu hoặc bỏ phần sửa live đang mở trước khi chốt phiên.</p>}
     </>}
     <ErrorNotice error={error}/>{note&&<p className="notice">{note}</p>}
     <div className="action-bar">

@@ -17,7 +17,8 @@ router = APIRouter()
 
 async def inference(state, work, *args, **kwargs):
     try:
-        await asyncio.wait_for(state.stt_slots.acquire(), timeout=10)
+        wait = getattr(getattr(state, "settings", None), "stt_queue_wait", 45.0)
+        await asyncio.wait_for(state.stt_slots.acquire(), timeout=wait)
     except asyncio.TimeoutError as error:
         raise SttUnavailable("STT_BUSY") from error
     try:
