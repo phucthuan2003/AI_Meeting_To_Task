@@ -4,68 +4,125 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.scheduling.annotation.*;
+import vn.aimtt.common.ApiException;
 import vn.aimtt.job.JobFailure;
-import vn.aimtt.llm.*;
 
+/**
+ * Pipeline: record → STT per chunk (here) → transcript → one analysis job after the meeting (AnalysisWorker).
+ * Live capture no longer calls the LLM per chunk; a provider outage can therefore never lose the transcript.
+ * Sessions are served round robin; with concurrency > 1 several chunks are transcribed at once (useful only when
+ * the STT service has more than one slot, e.g. a GPU).
+ */
 @Configuration
 @EnableScheduling
 @ConditionalOnProperty(name="app.audio.worker-enabled",havingValue="true")
-public class CaptureWorker {
-    private final CaptureService store; private final SttProvider stt; private final List<LlmProvider> providers;
-    private final ExtractionValidator validator; private final ObjectMapper json;
-    public CaptureWorker(CaptureService store, SttProvider stt, List<LlmProvider> providers, ExtractionValidator validator, ObjectMapper json) {
-        this.store=store;this.stt=stt;this.providers=providers;this.validator=validator;this.json=json;
+public class CaptureWorker implements DisposableBean {
+    private static final Logger log=LoggerFactory.getLogger(CaptureWorker.class);
+    private final CaptureService store; private final SttProvider stt; private final ObjectMapper json;
+    private final Semaphore slots; private final ExecutorService pool;
+    static final Set<String> TRANSIENT=Set.of("STT_RATE_LIMIT","STT_REQUEST_FAILED","PROVIDER_UNAVAILABLE","PROVIDER_RATE_LIMIT",
+            "PROVIDER_TIMEOUT","PROVIDER_CONNECTION_ERROR","PROVIDER_BUSY");
+    /** A local STT service may be restarting or busy: wait up to ~1 minute (2+4+8+16+30 s) before failing the session. */
+    static final int MAX_RETRIES=5;
+    static final int DRAIN_LIMIT=500;
+    long retryBaseMs=2000, retryMaxMs=30000;
+
+    /** Synchronous worker (tests): poll() processes every pending chunk on the calling thread. */
+    public CaptureWorker(CaptureService store, SttProvider stt, ObjectMapper json) {
+        this.store=store;this.stt=stt;this.json=json;this.slots=null;this.pool=null;
+    }
+    @Autowired
+    public CaptureWorker(CaptureService store, SttProvider stt, ObjectMapper json, @Value("${app.audio.worker-concurrency:1}") int concurrency) {
+        this.store=store;this.stt=stt;this.json=json;
+        int size=Math.max(1,Math.min(8,concurrency)); this.slots=new Semaphore(size);
+        var counter=new AtomicInteger();
+        this.pool=Executors.newFixedThreadPool(size,task->{var thread=new Thread(task,"capture-worker-"+counter.incrementAndGet());thread.setDaemon(true);return thread;});
+    }
+    private <T> T withRetry(CaptureService.Lease lease, java.util.function.Supplier<T> call) {
+        for(int attempt=1;;attempt++) {
+            try { return call.get(); }
+            catch(JobFailure failure) {
+                if(!failure.retryable()||!TRANSIENT.contains(failure.code())||attempt>MAX_RETRIES) throw failure;
+                long until=System.currentTimeMillis()+Math.min(retryMaxMs,retryBaseMs*(1L<<(attempt-1)));
+                while(System.currentTimeMillis()<until) {
+                    try { Thread.sleep(Math.max(1,Math.min(1000,until-System.currentTimeMillis()))); }
+                    catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new JobFailure("LEASE_LOST",false); }
+                    if(!store.heartbeat(lease)) throw new JobFailure("LEASE_LOST",false);
+                }
+            }
+        }
     }
     @Scheduled(fixedDelay=1000)
-    public void poll() { store.claim().ifPresent(this::process); }
+    public void poll() {
+        if(pool==null) { drain(); return; }
+        // Fill every free slot; each thread keeps claiming until the queue is empty, so chunks are not 1 s apart.
+        while(slots.tryAcquire()) {
+            Optional<CaptureService.Lease> claimed;
+            try { claimed=store.claim(); }
+            catch(Exception failure) { slots.release(); log.error("Capture claim failed type={}",failure.getClass().getSimpleName()); return; }
+            if(claimed.isEmpty()) { slots.release(); return; }
+            var first=claimed.get();
+            try {
+                pool.execute(()->{
+                    try { process(first); drain(); }
+                    catch(Exception failure) { log.error("Capture worker failed type={}",failure.getClass().getSimpleName()); }
+                    finally { slots.release(); }
+                });
+            } catch(RejectedExecutionException shuttingDown) { slots.release(); return; }
+        }
+    }
+    void drain() {
+        for(int i=0;i<DRAIN_LIMIT;i++) {
+            var next=store.claim(); if(next.isEmpty()) return;
+            process(next.get());
+        }
+    }
     @Scheduled(fixedDelay=600000)
     public void expire() { store.expire(); }
     public void process(CaptureService.Lease lease) {
         try {
             var s=store.get(lease.id());
-            if(s.processed()+1==s.next()) { store.drained(lease); return; }
+            if(s.processed()+1==s.next()) {
+                store.drained(lease);
+                if("LIVE".equals(s.mode())) autoPublish(lease.id());
+                return;
+            }
             var chunk=store.chunk(s);
             List<SttProvider.Segment> transcript;
             if(chunk.transcript()!=null) transcript=json.readValue(chunk.transcript(),new TypeReference<List<SttProvider.Segment>>(){});
             else {
-                transcript=stt.transcribe(chunk.audio(),chunk.suffix(),s.sttModel(),()->store.heartbeat(lease));
+                transcript=withRetry(lease,()->stt.transcribe(chunk.audio(),chunk.suffix(),s.sttModel(),()->store.heartbeat(lease)));
                 store.checkpointStt(lease,transcript);
             }
-            var sources=new ArrayList<>(store.sources(s)); var fresh=new ArrayList<Extraction.Source>();
+            var sources=new ArrayList<>(store.sources(s));
             for(var row:transcript) {
                 long from=chunk.startMs()+row.startMs(),to=chunk.startMs()+row.endMs();
-                var source=new CaptureService.Source(UUID.randomUUID(),sources.size(),row.text().replaceAll("[\\r\\n]+"," "),from,to);
-                sources.add(source); fresh.add(source.extraction());
+                sources.add(new CaptureService.Source(UUID.randomUUID(),sources.size(),row.text().replaceAll("[\\r\\n]+"," "),from,to));
             }
             if(sources.stream().mapToInt(v->v.text().length()+1).sum()>200000) throw new JobFailure("TRANSCRIPT_OVER_BUDGET",false);
-            var events=new ArrayList<>(store.events(s));
-            if("LIVE".equals(s.mode())&&!fresh.isEmpty()) {
-                if(!ExtractionPrompt.versionFor(s.provider()).equals(s.prompt())||!ExtractionPrompt.SCHEMA_VERSION.equals(s.schema())) throw new JobFailure("POLICY_VERSION_UNAVAILABLE",false);
-                var provider=providers.stream().filter(p->p.id().equals(s.provider())).findFirst().orElseThrow(()->new JobFailure("PROVIDER_NOT_CONFIGURED",false));
-                var state=validator.reconcile(store.snapshot(s),events,null,null,0);
-                // Same compact contract as AnalysisPipeline: {seq,text} segments, no date context for the model.
-                var data=json.createObjectNode(); if(s.title()!=null&&!s.title().isBlank()) data.put("title",TextNormalizer.forModel(s.title()));
-                data.set("segments",CompactSource.segments(json,fresh));data.set("known_tasks",json.valueToTree(state.candidates().stream().map(c->{
-                    var task=new LinkedHashMap<String,Object>();task.put("task_ref",c.taskRef());task.put("task_name",c.taskName());return task;
-                }).toList()));
-                data.set("part",json.valueToTree(Map.of("index",s.processed()+1,"overlap_until_sequence",-1)));
-                JsonNode schema;try(var in=new ClassPathResource("llm/meeting-events-v1.schema.json").getInputStream()){schema=json.readTree(in);}
-                if(data.toString().getBytes(StandardCharsets.UTF_8).length>40000) throw new JobFailure("TRANSCRIPT_OVER_BUDGET",false);
-                var output=CompactSource.restoreIds(json,provider.extract(store.snapshot(s),data.toString(),schema,()->store.heartbeat(lease),ExtractionPrompt.chunked()),fresh);
-                store.recordUsage(lease,output);
-                Set<String> known=new HashSet<>(); for(var item:events) if(item.event().event_type().equals("CREATE")) known.add(item.event().task_ref());
-                events.addAll(validator.parse(fresh,output,known));
-                if(events.size()>100) throw new JobFailure("LIVE_EVENT_LIMIT",false);
-                validator.reconcile(store.snapshot(s),events,null,null,0);
-            }
-            if(store.encode(sources).getBytes(StandardCharsets.UTF_8).length>1048576 || store.encode(events).getBytes(StandardCharsets.UTF_8).length>1048576)
-                throw new JobFailure("RESULT_OVER_BUDGET",false);
-            store.completeChunk(lease,sources,events);
+            if(store.encode(sources).getBytes(StandardCharsets.UTF_8).length>1048576) throw new JobFailure("RESULT_OVER_BUDGET",false);
+            store.completeChunk(lease,sources);
         } catch(JobFailure e) { store.fail(lease,e.code()); }
         catch(Exception e) { store.fail(lease,"CAPTURE_PROCESSING_FAILED"); }
     }
+    /** Last chunk done: save the transcript as a meeting and queue its single analysis job, without waiting for a click. */
+    private void autoPublish(UUID id) {
+        try {
+            var s=store.get(id);
+            if("READY".equals(s.status())) store.publish(s.owner(),id);
+        } catch(ApiException nothingToSave) {
+            // Empty transcript or a concurrent manual publish: the session stays as is and the panel explains.
+        } catch(Exception failure) { log.error("Capture auto-publish failed type={}",failure.getClass().getSimpleName()); }
+    }
+    @Override public void destroy() { if(pool!=null) pool.shutdownNow(); }
 }

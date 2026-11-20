@@ -1,5 +1,6 @@
 package vn.aimtt.capture;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
@@ -10,6 +11,7 @@ import java.text.Normalizer;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
@@ -36,10 +38,13 @@ public class HttpSttProvider implements SttProvider {
         if (apiKey.isBlank() || (intelligence && properties.intelligenceUrl() == null)) {
             throw new JobFailure("STT_NOT_CONFIGURED", false);
         }
+        var activity = PcmAudioActivity.fromWav(audio, suffix);
+        // Do not ask a generative recognizer to invent words for an empty recording.
+        if (activity.isPresent() && !activity.get().hasSignal()) return List.of();
         URI endpoint = intelligence ? properties.intelligenceUrl().resolve("/api/v1/transcribe/file")
                 : URI.create("https://api.groq.com/openai/v1/audio/transcriptions");
         Map<String, String> fields = intelligence ? Map.of()
-                : Map.of("model", model, "response_format", "verbose_json", "temperature", "0");
+                : Map.of("model", model, "response_format", "verbose_json", "temperature", "0", "language", "vi");
         try {
             String boundary = "aimtt" + UUID.randomUUID().toString().replace("-", "");
             var header = new ByteArrayOutputStream();
@@ -98,7 +103,10 @@ public class HttpSttProvider implements SttProvider {
                         .replaceAll("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]", "").strip();
                 chars += text.length();
                 if (chars > 200000) throw new JobFailure("TRANSCRIPT_OVER_BUDGET", false);
-                if (!text.isBlank()) result.add(new Segment(from, to, text));
+                boolean silent = activity.isPresent() && !activity.get().hasSignal(start, end);
+                if (!text.isBlank() && !silent && !isNonSpeech(row) && !isKnownHallucination(text)) {
+                    result.add(new Segment(from, to, text));
+                }
             }
             return List.copyOf(result);
         } catch (JobFailure error) {
@@ -106,5 +114,24 @@ public class HttpSttProvider implements SttProvider {
         } catch (Exception error) {
             throw new JobFailure("STT_RESPONSE_INVALID", false);
         }
+    }
+
+    private static boolean isNonSpeech(JsonNode segment) {
+        var probability = segment.path("no_speech_prob");
+        var confidence = segment.path("avg_logprob");
+        // Whisper's silence rule: high no-speech probability alone must not discard confident speech.
+        return probability.isNumber() && confidence.isNumber()
+                && probability.asDouble() > 0.6 && probability.asDouble() <= 1.0
+                && Double.isFinite(confidence.asDouble()) && confidence.asDouble() <= -1.0;
+    }
+
+    private static boolean isKnownHallucination(String text) {
+        String normalized = Normalizer.normalize(text, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "").toLowerCase(Locale.ROOT).replace('đ', 'd')
+                .replaceAll("[^\\p{L}\\p{N}]+", " ").strip();
+        // Match only the standalone recurring outro, not meeting tasks that mention these words.
+        String outro = "de khong bo lo nhung video hap dan";
+        return normalized.equals(outro) || normalized.matches(
+                "(?:(?:cac ban )?hay )?(?:subscribe|dang ky) cho kenh ghien mi go(?: " + outro + ")?");
     }
 }

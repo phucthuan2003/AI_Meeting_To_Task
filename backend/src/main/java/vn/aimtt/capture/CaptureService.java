@@ -29,12 +29,11 @@ public class CaptureService {
     public record Lease(UUID id, UUID token) {}
     private final JdbcTemplate db; private final ObjectMapper json; private final AudioProperties audio;
     private final AnalysisPolicy policy; private final AnalysisProperties analysis; private final MeetingService meetings;
-    private final AnalysisJobStore jobs; private final TaskStore tasks; private final TaskService taskService;
-    private final ExtractionValidator validator;
+    private final AnalysisJobStore jobs;
     public CaptureService(JdbcTemplate db, ObjectMapper json, AudioProperties audio, AnalysisPolicy policy, AnalysisProperties analysis,
-                          MeetingService meetings, AnalysisJobStore jobs, TaskStore tasks, TaskService taskService, ExtractionValidator validator) {
+                          MeetingService meetings, AnalysisJobStore jobs) {
         this.db=db; this.json=json; this.audio=audio; this.policy=policy; this.analysis=analysis;
-        this.meetings=meetings; this.jobs=jobs; this.tasks=tasks; this.taskService=taskService; this.validator=validator;
+        this.meetings=meetings; this.jobs=jobs;
     }
     public String encode(Object value) { try { return json.writeValueAsString(value); } catch(Exception e) { throw new IllegalStateException(); } }
     <T> T decode(String value, TypeReference<T> type) { try { return json.readValue(value,type); } catch(Exception e) { throw new IllegalStateException(); } }
@@ -56,27 +55,15 @@ public class CaptureService {
         return owned(owner,id);
     }
     public List<Source> sources(Session s) { return decode(s.sources(),new TypeReference<List<Source>>(){}); }
-    public List<ExtractionValidator.Parsed> events(Session s) { return decode(s.events(),new TypeReference<List<ExtractionValidator.Parsed>>(){}); }
-    public AnalysisJob snapshot(Session s) {
-        var now=Instant.now();
-        return new AnalysisJob(s.id(),s.id(),s.id(),1,s.title(),s.date(),s.timezone(),s.provider(),s.model(),"llm-v1",s.prompt(),s.schema(),65536,4096,
-                "capture",AnalysisJob.Status.PROCESSING,"CAPTURE",0,1,s.lease(),now.plusSeconds(90),1,3,0,now,null,false,now,now,null);
-    }
     public Map<String,Object> view(UUID owner, UUID id) {
         var s=owned(owner,id); var result=new LinkedHashMap<String,Object>();
         result.put("id",s.id()); result.put("mode",s.mode()); result.put("status",s.status()); result.put("version",s.version());
         result.put("nextSequence",s.next()); result.put("processedSequence",s.processed()); result.put("errorCode",s.error());
-        result.put("usage",db.queryForMap("select llm_calls,llm_input_tokens,llm_output_tokens,llm_latency_ms from capture_sessions where id=?",id));
+        // Chunks uploaded but not yet transcribed: lets the panel show "waiting for STT" when the server is busy.
+        result.put("pendingChunks",Math.max(0,s.next()-s.processed()-1));
         result.put("meetingId",s.meetingId()); result.put("expiresAt",s.expires()); result.put("sources",sources(s));
-        result.put("overrides",decode(s.overrides(),new TypeReference<Map<String,Object>>(){}));
-        result.put("warnings", "LIVE".equals(s.mode()) ? validator.reconcile(snapshot(s),events(s),null,null,0).warnings() : List.of());
-        result.put("proposals", "LIVE".equals(s.mode()) ? stableCandidates(s) : List.of());
+        result.put("analysisProvider",s.provider());
         return result;
-    }
-    private List<Extraction.Candidate> stableCandidates(Session s) {
-        return validator.reconcile(snapshot(s),events(s),null,null,0).candidates().stream().map(c -> new Extraction.Candidate(
-                UUID.nameUUIDFromBytes((s.id()+":"+c.taskRef()).getBytes(java.nio.charset.StandardCharsets.UTF_8)),c.taskRef(),c.taskName(),c.assigneeRaw(),c.deadlineRaw(),
-                c.priority(),c.dueLocal(),c.dueAt(),c.timezone(),c.evidence(),c.warnings(),c.needsConfirmation(),c.reviewStatus())).toList();
     }
     @Transactional
     public UUID create(UUID owner, JsonNode body, String key) {
@@ -146,36 +133,17 @@ public class CaptureService {
         db.update("update capture_sessions set status=?,error_code=null,lease_id=null,lease_until=null,version=version+1 where id=?",s.mode().equals("LIVE")?"OPEN":"DRAINING",id);
     }
     @Transactional
-    public void override(UUID owner, UUID id, JsonNode body) {
-        var s=lock(owner,id);
-        if(!Set.of("OPEN","DRAINING","READY","FAILED").contains(s.status())) throw conflict("Phiên đã chốt/hủy.");
-        if(!body.path("expectedVersion").isIntegralNumber() || !body.path("expectedVersion").canConvertToLong()) throw ApiException.invalid("expectedVersion phải là số nguyên.");
-        if(body.path("expectedVersion").asLong(-1)!=s.version()) throw new ApiException(HttpStatus.CONFLICT,"STALE_VERSION","Bản nháp live đã thay đổi; tải lại.");
-        String ref=body.path("taskRef").asText();
-        if(validator.reconcile(snapshot(s),events(s),null,null,0).candidates().stream().noneMatch(c->c.taskRef().equals(ref))) throw ApiException.notFound();
-        var patch=body.path("patch");
-        if(!patch.isObject()) throw ApiException.invalid("Thiếu patch.");
-        patch.fieldNames().forEachRemaining(field->{
-            if(!Set.of("taskName","assigneeRaw","deadlineRaw","priority").contains(field)) throw ApiException.invalid("Trường live không được sửa.");
-            var value=patch.get(field); if(!(value.isNull()||value.isTextual())||value.asText("").length()>255) throw ApiException.invalid("Giá trị live không hợp lệ.");
-            if(field.equals("taskName")&&(value.isNull()||value.asText().isBlank())) throw ApiException.invalid("Tên việc không được trống.");
-            if(field.equals("priority")&&!value.isNull()&&!Set.of("LOW","MEDIUM","HIGH").contains(value.asText())) throw ApiException.invalid("Ưu tiên không hợp lệ.");
-        });
-        ObjectNode overrides=decode(s.overrides(),new TypeReference<ObjectNode>(){});
-        ObjectNode saved=overrides.has(ref)?(ObjectNode)overrides.get(ref):json.createObjectNode();
-        saved.setAll((ObjectNode)patch); overrides.set(ref,saved);
-        db.update("update capture_sessions set overrides=?::jsonb,version=version+1 where id=?",encode(overrides),id);
-    }
-    @Transactional
     public Optional<Lease> claim() {
         // Expired I/O is ambiguous: fail visibly; retry remains an explicit user action.
         db.update("update capture_sessions set status='FAILED',error_code='CAPTURE_WORKER_INTERRUPTED',lease_id=null,lease_until=null,version=version+1 where lease_until < now() and status in ('OPEN','DRAINING')");
         var ids=db.query("""
                 select id from capture_sessions s where s.status in ('OPEN','DRAINING') and s.lease_id is null and expires_at>now()
-                and (processed_sequence+1<next_sequence or status='DRAINING') order by created_at for update skip locked limit 1
+                and (processed_sequence+1<next_sequence or status='DRAINING')
+                order by coalesce(last_claimed_at,created_at), created_at for update skip locked limit 1
                 """,(r,n)->r.getObject(1,UUID.class));
         if(ids.isEmpty()) return Optional.empty(); UUID token=UUID.randomUUID();
-        db.update("update capture_sessions set lease_id=?,lease_until=now()+interval '90 seconds' where id=?",token,ids.get(0));
+        // Round robin: a session goes to the back of the queue after each chunk, so one long meeting cannot starve others.
+        db.update("update capture_sessions set lease_id=?,lease_until=now()+interval '90 seconds',last_claimed_at=clock_timestamp() where id=?",token,ids.get(0));
         return Optional.of(new Lease(ids.get(0),token));
     }
     public boolean heartbeat(Lease lease) {
@@ -192,20 +160,10 @@ public class CaptureService {
         db.update("update capture_chunks set transcript=?::jsonb,audio=null,status='TRANSCRIBED' where session_id=? and sequence=?",encode(transcript),s.id(),s.processed()+1);
     }
     @Transactional
-    public void recordUsage(Lease lease, LlmProvider.Output output) {
-        if(!heartbeat(lease)) throw new JobFailure("LEASE_LOST",false);
-        db.update("""
-                update capture_sessions set llm_calls=llm_calls+1,
-                llm_input_tokens=case when llm_input_tokens is null or ?::bigint is null then null else llm_input_tokens+? end,
-                llm_output_tokens=case when llm_output_tokens is null or ?::bigint is null then null else llm_output_tokens+? end,
-                llm_latency_ms=llm_latency_ms+? where id=? and lease_id=?
-                """,output.inputTokens(),output.inputTokens(),output.outputTokens(),output.outputTokens(),output.latencyMs(),lease.id(),lease.token());
-    }
-    @Transactional
-    public void completeChunk(Lease lease, List<Source> sources, List<ExtractionValidator.Parsed> events) {
+    public void completeChunk(Lease lease, List<Source> sources) {
         var s=lock(get(lease.id()).owner(),lease.id()); if(!heartbeat(lease)) return;
         db.update("update capture_chunks set transcript=null,audio=null,status='COMPLETED' where session_id=? and sequence=?",s.id(),s.processed()+1);
-        db.update("update capture_sessions set sources=?::jsonb,events=?::jsonb,processed_sequence=processed_sequence+1,lease_id=null,lease_until=null,version=version+1 where id=?",encode(sources),encode(events),s.id());
+        db.update("update capture_sessions set sources=?::jsonb,processed_sequence=processed_sequence+1,lease_id=null,lease_until=null,version=version+1 where id=?",encode(sources),s.id());
     }
     @Transactional
     public void drained(Lease lease) {
@@ -218,11 +176,18 @@ public class CaptureService {
         if(!heartbeat(lease)) return;
         db.update("update capture_sessions set status='FAILED',error_code=?,lease_id=null,lease_until=null,version=version+1 where id=? and lease_id=?",code,lease.id(),lease.token());
     }
+    /**
+     * Saves the transcript as a meeting. A FAILED live session with some transcript can still be saved, so a late STT
+     * error never loses what was already recognised. For LIVE sessions the one analysis job is queued here (the
+     * normal analysis worker runs it with retry/rate limiting), replacing the per-chunk LLM calls of earlier versions.
+     */
     @Transactional
     public UUID publish(UUID owner, UUID id) {
+        jobs.lockOwner(owner);
         var s=lock(owner,id); if(s.status().equals("PUBLISHED") && s.meetingId()!=null) return s.meetingId();
-        if(!s.status().equals("READY")) throw conflict("Chờ xử lý hết đoạn cuối rồi lưu meeting.");
-        var source=sources(s); if(source.isEmpty()) throw ApiException.invalid("Không có lời nói được nhận dạng; hủy phiên và thử nguồn khác.");
+        var source=sources(s);
+        if(!s.status().equals("READY") && !(s.status().equals("FAILED") && !source.isEmpty())) throw conflict("Chờ xử lý hết đoạn cuối rồi lưu meeting.");
+        if(source.isEmpty()) throw ApiException.invalid("Không có lời nói được nhận dạng; hủy phiên và thử nguồn khác.");
         var raw=new StringBuilder(); var segments=new ArrayList<ParsedTranscript.Segment>();
         for(var item:source) {
             if(!raw.isEmpty()) raw.append('\n'); int start=raw.length(); raw.append(item.text());
@@ -230,35 +195,16 @@ public class CaptureService {
                     Map.of("rawStart",start,"rawEnd",raw.length(),"sourceType","AUDIO","startMs",item.startMs(),"endMs",item.endMs(),"segmentSequence",item.sequence())));
         }
         var meeting=meetings.create(owner,s.title(),s.date(),s.timezone(),new ParsedTranscript("AUDIO",raw.toString(),raw.toString(),segments,List.of("STT_REVIEW_REQUIRED")));
-        if("LIVE".equals(s.mode())) {
-            var job=jobs.create(jobs.lockMeeting(owner,meeting.meetingId()),"capture:"+id,
-                    new AnalysisPolicy.Definition(s.provider(),s.model(),"llm-v1",s.prompt(),s.schema(),65536,4096));
-            var savedSource=jobs.analysisSource(job); var map=new HashMap<String,String>();
-            for(int i=0;i<source.size();i++) map.put(source.get(i).segmentId().toString(),savedSource.get(i).segmentId().toString());
-            var rows=json.createArrayNode();
-            for(var item:events(s)) {
-                var event=(ObjectNode)json.valueToTree(item.event());
-                for(var evidence:event.path("evidence_refs")) ((ObjectNode)evidence).put("segment_id",map.get(evidence.path("segment_id").asText()));
-                rows.add(event);
-            }
-            var usage=db.queryForMap("select llm_input_tokens,llm_output_tokens,llm_latency_ms from capture_sessions where id=?",id);
-            Long inputTokens=usage.get("llm_input_tokens")==null?null:((Number)usage.get("llm_input_tokens")).longValue();
-            Long outputTokens=usage.get("llm_output_tokens")==null?null:((Number)usage.get("llm_output_tokens")).longValue();
-            long latency=((Number)usage.get("llm_latency_ms")).longValue();
-            var result=validator.validate(job,savedSource,new LlmProvider.Output(encode(Map.of("events",rows)),inputTokens,outputTokens,latency));
-            db.update("insert into analysis_results(job_id,result_json,input_tokens,output_tokens,latency_ms,created_at) values (?,?::jsonb,?,?,?,now())",job.id(),encode(result),inputTokens,outputTokens,latency);
-            tasks.insertCandidates(job,result.candidates(),Instant.now());
-            db.update("update analysis_checkpoints set prepared=true,prepared_segments=?,last_sequence=?,updated_at=now() where job_id=?",source.size(),source.size()-1,job.id());
-            db.update("update analysis_jobs set status='COMPLETED',stage='COMPLETED',total_chunks=1,completed_chunks=1,completed_at=now(),updated_at=now() where id=?",job.id());
-            ObjectNode overrides=decode(s.overrides(),new TypeReference<ObjectNode>(){});
-            for(var row:tasks.current(meeting.meetingId(),job.id())) if(overrides.has(row.taskRef())) {
-                var patch=((ObjectNode)overrides.get(row.taskRef())).deepCopy(); patch.put("expectedVersion",row.version());
-                taskService.patch(owner,row.id(),patch);
-            }
-        }
+        if("LIVE".equals(s.mode())) queueAnalysis(owner,meeting.meetingId(),s);
         db.update("delete from capture_chunks where session_id=?",id);
         db.update("update capture_sessions set status='PUBLISHED',meeting_id=?,sources='[]',events='[]',overrides='{}',version=version+1 where id=?",meeting.meetingId(),id);
         return meeting.meetingId();
+    }
+    /** Best effort: without a ready provider or with the user's job quota used up, the meeting is saved and analysed manually. */
+    private void queueAnalysis(UUID owner, UUID meetingId, Session s) {
+        if(s.provider()==null || policy.views().stream().noneMatch(v->v.providerId().equals(s.provider()) && v.providerReady())) return;
+        if(jobs.activeForOwner(owner)>=analysis.maxActivePerUser()) return;
+        jobs.create(jobs.lockMeeting(owner,meetingId),"capture:"+s.id(),policy.resolve(s.provider(),AnalysisPolicy.LLM_ID,analysis));
     }
     public static String stamp(long ms) { return "%02d:%02d:%02d.%03d".formatted(ms/3600000,(ms/60000)%60,(ms/1000)%60,ms%1000); }
     public void expire() { db.update("delete from capture_sessions where expires_at<now()"); }

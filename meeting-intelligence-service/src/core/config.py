@@ -17,6 +17,10 @@ class Settings:
     api_key: str = field(default="", repr=False)
     gemini_api_key: str = field(default="", repr=False)
     gemini_model: str = "gemini-3.5-flash-lite"
+    # Transcriptions run at once. 1 is right for CPU; a GPU with spare memory can take 2.
+    stt_slots: int = 1
+    # Seconds a request waits for a free slot before STT_BUSY (keep below the backend's 60 s HTTP timeout).
+    stt_queue_wait: float = 45.0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -30,4 +34,6 @@ class Settings:
             api_key=os.getenv("INTELLIGENCE_API_KEY", ""),
             gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
             gemini_model=os.getenv("GEMINI_MODEL", cls.gemini_model),
+            stt_slots=max(1, min(4, int(os.getenv("STT_SLOTS", "1")))),
+            stt_queue_wait=max(1.0, min(55.0, float(os.getenv("STT_QUEUE_WAIT_SECONDS", "45")))),
         )

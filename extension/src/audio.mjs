@@ -1,4 +1,33 @@
 export const CAPTURE_STATE = 'aiMttCaptureState';
+/** Live chunk length. Whisper pads every input to a 30 s window, so ~28 s chunks halve STT work vs 15 s (WAV limit is 30 s). */
+export const CHUNK_SECONDS = 28;
+// Conservative silence gate, not a speech classifier. Inspect short frames so a
+// quiet word in a long silent chunk is not lost in the chunk's average volume.
+export function hasAudioSignal(samples, sampleRate) {
+  return audioSignalWindow(samples, sampleRate) !== null;
+}
+
+export function audioSignalWindow(samples, sampleRate) {
+  const frameSize = Math.max(1, Math.round(sampleRate * 0.02));
+  let first = -1, last = -1;
+  for (let start = 0; start < samples.length; start += frameSize) {
+    const end = Math.min(samples.length, start + frameSize), count = end - start;
+    let sum = 0, squares = 0;
+    for (let i = start; i < end; i++) {
+      sum += samples[i]; squares += samples[i] * samples[i];
+    }
+    // Remove DC offset; -60 dBFS RMS only excludes near-silence.
+    if (squares / count - (sum / count) ** 2 > 0.001 ** 2) {
+      if (first < 0) first = start;
+      last = end;
+    }
+  }
+  if (first < 0) return null;
+  // Keep context around quiet consonants at either edge; preserve the samples.
+  const padding = Math.round(sampleRate * 0.2);
+  return { start: Math.max(0, first - padding), end: Math.min(samples.length, last + padding) };
+}
+
 export function validateAudio(file) {
   if (!file || !/\.(wav|mp3|m4a|webm)$/i.test(file.name) || file.size <= 0 || file.size > 10 * 1024 * 1024) {
     throw new Error('Chọn WAV, MP3, M4A hoặc WebM từ 1 byte tới 10 MiB; tối đa một giờ âm thanh.');
@@ -19,11 +48,4 @@ export function wavBytes(samples, sampleRate) {
     view.setInt16(44+i*2, Math.round(Math.max(-1,Math.min(1,sample))*32767),true);
   }
   return bytes;
-}
-
-// Keep only fields actually edited: changing a title must not freeze an AI-updated assignee/deadline.
-export function liveDraftPatch(base, draft) {
-  const patch = {};
-  for (const field of ['taskName','assigneeRaw','deadlineRaw']) if (draft[field] !== base[field]) patch[field] = draft[field] || null;
-  return patch;
 }

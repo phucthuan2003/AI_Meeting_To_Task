@@ -1,13 +1,31 @@
 import { installSelectionMenu, captureSelection } from './selection.mjs';
 import { CAPTURE_STATE } from './audio.mjs';
 import { SESSION_KEY } from './storage.mjs';
+// The panel is opened from action.onClicked (not openPanelOnActionClick): Chrome only grants activeTab, which
+// tabCapture needs, when the click is delivered to the extension. Ctrl/Cmd+Shift+Y (_execute_action) does the same.
 chrome.runtime.onInstalled.addListener(() => {
   installSelectionMenu(chrome);
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
 });
 chrome.runtime.onStartup.addListener(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
 });
+chrome.action.onClicked.addListener(tab => {
+  // Must run synchronously inside the click (user gesture); no await before open().
+  chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+});
+
+// Chrome's English tabCapture errors → what the user should do.
+function captureError(error) {
+  const text = String(error?.message ?? error);
+  if (/cannot be captured|chrome:\/\/|Chrome pages/i.test(text)) {
+    return 'Không thể thu trang của Chrome (tab mới, chrome://, Web Store). Mở tab cuộc họp (Meet, Zoom web…) rồi thử lại.';
+  }
+  if (/not been invoked|activeTab/i.test(text)) {
+    return 'Chrome chưa cho phép thu tab này. Ở tab cuộc họp, bấm icon Meeting to Task (hoặc Ctrl/Cmd+Shift+Y) rồi bấm Bắt đầu thu lại ngay, không chuyển tab.';
+  }
+  return text;
+}
 // Selected text is held only in trusted session storage until explicitly imported or dismissed.
 chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }).catch(() => {});
 
@@ -20,7 +38,9 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (sender.id !== chrome.runtime.id || message.target !== 'capture-worker') return;
   (async () => {
     if (message.command === 'start') {
-      const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: message.tabId });
+      let streamId;
+      try { streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: message.tabId }); }
+      catch (error) { return { ok: false, error: captureError(error) }; }
       if (!(await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] })).length) {
         await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: ['USER_MEDIA'], justification: 'Thu âm tab và microphone theo yêu cầu người dùng.' });
       }

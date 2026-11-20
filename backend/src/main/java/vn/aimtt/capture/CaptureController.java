@@ -14,7 +14,7 @@ import vn.aimtt.common.ApiException;
 public class CaptureController {
     private final CaptureService service;private final AudioProperties properties;
     public CaptureController(CaptureService service, AudioProperties properties) {this.service=service;this.properties=properties;}
-    @GetMapping("/config") public Map<String,Object> config() {return Map.of("sttReady",properties.configured(),"maxFileBytes",AudioInput.MAX_BYTES,"maxLiveChunks",480,"maxLiveHours",2);}
+    @GetMapping("/config") public Map<String,Object> config() {return Map.of("sttReady",properties.configured(),"maxFileBytes",AudioInput.MAX_BYTES,"maxLiveChunks",480,"maxLiveHours",2,"liveAnalysis","AFTER_STOP");}
     @GetMapping public List<Map<String,Object>> list(@AuthenticationPrincipal Jwt jwt){return service.list(owner(jwt));}
     @PostMapping @ResponseStatus(HttpStatus.ACCEPTED)
     public Map<String,Object> create(@AuthenticationPrincipal Jwt jwt,@RequestBody JsonNode body,@RequestHeader("Idempotency-Key") String key) {
@@ -35,7 +35,6 @@ public class CaptureController {
     }
     @PostMapping("/{id}/cancel") public Map<String,Object> cancel(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id){service.cancel(owner(jwt),id);return service.view(owner(jwt),id);}
     @PostMapping("/{id}/retry") public Map<String,Object> retry(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id){service.retry(owner(jwt),id);return service.view(owner(jwt),id);}
-    @PatchMapping("/{id}/drafts") public Map<String,Object> edit(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id,@RequestBody JsonNode body){service.override(owner(jwt),id,body);return service.view(owner(jwt),id);}
     @PostMapping("/{id}/publish") public Map<String,Object> publish(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id){return Map.of("meetingId",service.publish(owner(jwt),id));}
     private UUID owner(Jwt jwt){return UUID.fromString(jwt.getSubject());}
 }

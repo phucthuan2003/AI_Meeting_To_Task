@@ -1,5 +1,5 @@
 import { createApi } from './api.mjs';
-import { wavBytes } from './audio.mjs';
+import { wavBytes, audioSignalWindow, CHUNK_SECONDS } from './audio.mjs';
 const origin = __API_ORIGIN__, api = createApi(origin);
 let current = null;
 async function storage(command, fields) {
@@ -28,8 +28,13 @@ function flush() {
   if (!current.samples.length) return;
   const samples = new Float32Array(current.length); let at = 0;
   for (const part of current.samples) { samples.set(part, at); at += part.length; }
-  current.queue.push({ sequence: current.sequence++, startMs: Math.round((current.total-current.length)*1000/current.rate),
-    file: new File([wavBytes(samples,current.rate)], 'chunk.wav', { type: 'audio/wav' }) });
+  // Keep total capture time even when silence is skipped. Only uploaded chunks
+  // consume a sequence number, preserving retries, STOP counts and timestamps.
+  const signal = audioSignalWindow(samples, current.rate);
+  if (signal) {
+    current.queue.push({ sequence: current.sequence++, startMs: Math.round((current.total-current.length+signal.start)*1000/current.rate),
+      file: new File([wavBytes(samples.subarray(signal.start, signal.end),current.rate)], 'chunk.wav', { type: 'audio/wav' }) });
+  }
   current.samples=[]; current.length=0;
 }
 async function drain() {
@@ -68,7 +73,8 @@ async function start(message) {
     node.port.onmessage=event=>{
       if(current?.state!=='RECORDING')return;
       const part=new Float32Array(event.data);current.samples.push(part);current.length+=part.length;current.total+=part.length;
-      if(current.length>=current.rate*15) {flush();status().catch(()=>{});drain();}
+      // ~28 s chunks: Whisper pads every input to a 30 s window, so 15 s chunks cost almost as much as 30 s ones.
+      if(current.length>=current.rate*CHUNK_SECONDS) {flush();status().catch(()=>{});drain();}
       if(current.queue.length>=8||current.total>=current.rate*7200) stop().catch(()=>{});
     };
     await context.resume();await status({state:'RECORDING'});

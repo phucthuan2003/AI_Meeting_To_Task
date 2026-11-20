@@ -1,10 +1,14 @@
 package vn.aimtt.capture;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
 import org.junit.jupiter.api.Test;
 import vn.aimtt.job.JobFailure;
 import vn.aimtt.llm.LlmHttpTransport;
@@ -29,6 +33,52 @@ class SttProviderTest {
         assertThat(provider(200,"{\"duration\":2,\"segments\":[]}").transcribe(new byte[]{1},"wav","whisper-large-v3-turbo",()->true)).isEmpty();
         for(String body:List.of("{}","{\"duration\":3601,\"segments\":[]}","{\"duration\":3,\"segments\":[{\"start\":2,\"end\":1,\"text\":\"bad\"}]}"))
             assertThatThrownBy(()->provider(200,body).transcribe(new byte[]{1},"wav","whisper-large-v3-turbo",()->true)).isInstanceOf(JobFailure.class);
+    }
+    @Test void filtersReportedOutroIncludingSplitAndDecomposedVietnamese() throws Exception {
+        for (String text : List.of(
+                "Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn",
+                "Hãy subscribe cho kênh Ghiền Mì Gõ!",
+                "Để không bỏ lỡ những video hấp dẫn.",
+                java.text.Normalizer.normalize("HÃY SUBSCRIBE CHO KÊNH GHIỀN MÌ GÕ.", java.text.Normalizer.Form.NFD))) {
+            var body = json.createObjectNode().put("duration", 15);
+            body.putArray("segments").addObject().put("start", 0).put("end", 4).put("text", text);
+            assertThat(provider(200, json.writeValueAsString(body))
+                    .transcribe(new byte[]{1}, "wav", "whisper-large-v3-turbo", () -> true)).isEmpty();
+        }
+    }
+    @Test void rejectsUncertainNonSpeechAndKeepsConfidentSpeechAndOriginalTimestamps() {
+        var result = provider(200, """
+                {"duration":15,"segments":[
+                  {"start":0,"end":3,"text":"Âm nhiễu bị đoán thành lời.","no_speech_prob":0.95,"avg_logprob":-1.4},
+                  {"start":4,"end":6,"text":"Mai làm API.","no_speech_prob":0.9,"avg_logprob":-0.2},
+                  {"start":7,"end":9,"text":"Nam sửa nút subscribe cho kênh Ghiền Mì Gõ."},
+                  {"start":10,"end":12,"text":"Kiểm tra đăng nhập.","avg_logprob":-1.2},
+                  {"start":12,"end":14,"text":"Gửi báo cáo.","no_speech_prob":0.1,"avg_logprob":-1.2}
+                ]}
+                """).transcribe(new byte[]{1}, "wav", "whisper-large-v3-turbo", () -> true);
+        assertThat(result).containsExactly(
+                new SttProvider.Segment(4000, 6000, "Mai làm API."),
+                new SttProvider.Segment(7000, 9000, "Nam sửa nút subscribe cho kênh Ghiền Mì Gõ."),
+                new SttProvider.Segment(10000, 12000, "Kiểm tra đăng nhập."),
+                new SttProvider.Segment(12000, 14000, "Gửi báo cáo."));
+    }
+    @Test void groqRequestExplicitlySelectsVietnamese() {
+        var provider = new HttpSttProvider(new AudioProperties("key", null, true, null, null), (request, lease) -> {
+            var bytes = new ByteArrayOutputStream();
+            var done = new CompletableFuture<Void>();
+            request.bodyPublisher().orElseThrow().subscribe(new Flow.Subscriber<ByteBuffer>() {
+                public void onSubscribe(Flow.Subscription subscription) { subscription.request(Long.MAX_VALUE); }
+                public void onNext(ByteBuffer buffer) {
+                    byte[] part = new byte[buffer.remaining()]; buffer.get(part); bytes.writeBytes(part);
+                }
+                public void onError(Throwable error) { done.completeExceptionally(error); }
+                public void onComplete() { done.complete(null); }
+            });
+            done.join();
+            assertThat(bytes.toString(StandardCharsets.UTF_8)).contains("name=\"language\"\r\n\r\nvi\r\n");
+            return new LlmHttpTransport.Response(200, "{\"duration\":2,\"segments\":[]}".getBytes(StandardCharsets.UTF_8));
+        }, json);
+        assertThat(provider.transcribe(new byte[]{1}, "wav", "whisper-large-v3-turbo", () -> true)).isEmpty();
     }
     @Test void authRateLimitAndRejectionNeverExposeRawProviderResponse() {
         for(int status:List.of(400,401,403,429,500)) assertThatThrownBy(()->provider(status,"secret audio/key").transcribe(new byte[]{1},"wav","whisper-large-v3-turbo",()->true))

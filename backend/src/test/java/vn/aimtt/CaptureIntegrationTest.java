@@ -25,7 +25,7 @@ class CaptureIntegrationTest {
     @DynamicPropertySource static void properties(DynamicPropertyRegistry r){
         TestDatabase.properties(r);r.add("app.audio.api-key",()->"synthetic-stt-key");r.add("app.llm.gemini.api-key",()->"synthetic-gemini-key");
     }
-    @Autowired MockMvc mvc;@Autowired ObjectMapper json;@Autowired CaptureService service;@Autowired List<LlmProvider> providers;@Autowired ExtractionValidator validator;
+    @Autowired MockMvc mvc;@Autowired ObjectMapper json;@Autowired CaptureService service;@Autowired org.springframework.jdbc.core.JdbcTemplate db;
     @MockitoBean SttProvider stt;@MockitoBean LlmHttpTransport http;
     String owner,other;
     @BeforeEach void setup() throws Exception {
@@ -67,7 +67,7 @@ class CaptureIntegrationTest {
     }
     JsonNode snapshot(UUID id) throws Exception {return json.readTree(mvc.perform(get("/api/v1/captures/{id}",id).header("Authorization","Bearer "+owner)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());}
     void stop(UUID id,int count) throws Exception {mvc.perform(post("/api/v1/captures/{id}/stop",id).header("Authorization","Bearer "+owner).contentType(MediaType.APPLICATION_JSON).content("{\"chunkCount\":"+count+"}")).andExpect(status().isOk());}
-    void tick(){new CaptureWorker(service,stt,providers,validator,json).poll();}
+    void tick(){new CaptureWorker(service,stt,json).poll();}
     String publish(UUID id) throws Exception {return json.readTree(mvc.perform(post("/api/v1/captures/{id}/publish",id).header("Authorization","Bearer "+owner)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("meetingId").asText();}
     @Test void fileUploadDeduplicatesAndProducesOwnerScopedMeetingWithAudioEvidence() throws Exception {
         UUID id=create("FILE");upload(id,0,0);upload(id,0,0);assertThat(snapshot(id).path("nextSequence").asInt()).isEqualTo(1);
@@ -76,19 +76,24 @@ class CaptureIntegrationTest {
         mvc.perform(get("/api/v1/meetings/{id}/transcript",meeting).header("Authorization","Bearer "+owner)).andExpect(status().isOk()).andExpect(jsonPath("$.segments[0].sourceLocator.sourceType").value("AUDIO"));
         mvc.perform(get("/api/v1/captures/{id}",id).header("Authorization","Bearer "+other)).andExpect(status().isNotFound());
     }
-    @Test void liveOverrideSurvivesFinalizationAndEvidenceIsMappedToSavedSegments() throws Exception {
-        UUID id=create("LIVE");upload(id,0,0);tick();var before=snapshot(id);assertThat(before.path("proposals")).hasSize(1);
-        String patch=json.writeValueAsString(Map.of("expectedVersion",before.path("version").asLong(),"taskRef","api-task","patch",Map.of("taskName","API đã sửa bởi người dùng")));
-        mvc.perform(patch("/api/v1/captures/{id}/drafts",id).header("Authorization","Bearer "+owner).contentType(MediaType.APPLICATION_JSON).content(patch)).andExpect(status().isOk());
-        mvc.perform(patch("/api/v1/captures/{id}/drafts",id).header("Authorization","Bearer "+owner).contentType(MediaType.APPLICATION_JSON).content(patch)).andExpect(status().isConflict());
-        stop(id,1);tick();String meeting=publish(id);
-        mvc.perform(get("/api/v1/meetings/{id}/tasks",meeting).header("Authorization","Bearer "+owner)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.tasks[0].taskName").value("API đã sửa bởi người dùng"))
-                .andExpect(jsonPath("$.tasks[0].reviewStatus").value("PENDING_REVIEW"));
+    @Test void liveCaptureIsSttOnlyAndStopSavesTheMeetingWithOneQueuedAnalysisJob() throws Exception {
+        UUID id=create("LIVE");upload(id,0,0);upload(id,1,30000);tick();
+        var live=snapshot(id);assertThat(live.path("sources")).hasSize(2);assertThat(live.path("pendingChunks").asInt()).isZero();
+        verify(http,never()).send(any(),any());
+        stop(id,2);tick();
+        var done=snapshot(id);assertThat(done.path("status").asText()).isEqualTo("PUBLISHED");
+        String meeting=done.path("meetingId").asText();assertThat(publish(id)).isEqualTo(meeting);
+        assertThat(db.queryForObject("select count(*) from analysis_jobs where meeting_id=?::uuid and idempotency_key=?",Integer.class,meeting,"capture:"+id)).isEqualTo(1);
+        mvc.perform(get("/api/v1/meetings/{id}/transcript",meeting).header("Authorization","Bearer "+owner)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.segments.length()").value(2)).andExpect(jsonPath("$.segments[1].sourceLocator.startMs").value(30000));
     }
-    @Test void laterCancellationRemovesProvisionalTaskAndNoCardIsAutomaticallyCreated() throws Exception {
-        UUID id=create("LIVE");upload(id,0,0);tick();upload(id,1,15000);tick();stop(id,2);tick();assertThat(snapshot(id).path("proposals")).isEmpty();
-        String meeting=publish(id);mvc.perform(get("/api/v1/meetings/{id}/tasks",meeting).header("Authorization","Bearer "+owner)).andExpect(status().isOk()).andExpect(jsonPath("$.tasks.length()").value(0));
+    @Test void failedLiveSessionStillSavesTheTranscriptAlreadyRecognised() throws Exception {
+        UUID id=create("LIVE");upload(id,0,0);tick();
+        when(stt.transcribe(any(),any(),any(),any())).thenThrow(new vn.aimtt.job.JobFailure("STT_AUTH_ERROR",false));
+        upload(id,1,30000);tick();assertThat(snapshot(id).path("status").asText()).isEqualTo("FAILED");
+        String meeting=publish(id);
+        mvc.perform(get("/api/v1/meetings/{id}/transcript",meeting).header("Authorization","Bearer "+owner)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.segments.length()").value(1));
     }
     @Test void cancelAndMissingFinalChunkBlockPublish() throws Exception {
         UUID id=create("FILE");
