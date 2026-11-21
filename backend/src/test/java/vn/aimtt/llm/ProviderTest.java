@@ -134,7 +134,9 @@ class ProviderTest {
         assertThat(result.outputTokens()).isEqualTo(58);
         var body = json.readTree(requestBody(requests.get(0)));
         assertThat(body.at("/generationConfig/responseMimeType").asText()).isEqualTo("application/json");
-        assertThat(body.at("/generationConfig/responseJsonSchema").toString()).doesNotContain("maxLength").contains("event_type");
+        assertThat(body.at("/generationConfig/responseJsonSchema").toString())
+                .doesNotContain("maxLength", "minItems", "maxItems", "minimum", "maximum")
+                .contains("event_type");
         assertThat(body.at("/generationConfig/thinkingConfig/thinkingLevel").asText()).isEqualTo("minimal");
         assertThat(body.at("/systemInstruction/parts/0/text").asText()).isEqualTo(ExtractionPrompt.SYSTEM);
         String user = body.at("/contents/0/parts/0/text").asText();

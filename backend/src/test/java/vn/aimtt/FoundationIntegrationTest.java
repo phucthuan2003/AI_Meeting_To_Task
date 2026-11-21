@@ -189,6 +189,9 @@ class FoundationIntegrationTest {
         mvc.perform(post("/api/v1/meetings").header("Authorization", bearer(token))
                 .contentType(MediaType.APPLICATION_JSON).content(content))
                 .andExpect(status().isPayloadTooLarge()).andExpect(jsonPath("$.code").value("REQUEST_TOO_LARGE"));
+        mvc.perform(post("/api/v1/captures").header("Authorization", bearer(token))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"mode\":\"FILE\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_INPUT"));
     }
 
     private String bearer(String token) { return "Bearer " + token; }

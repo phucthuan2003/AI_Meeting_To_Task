@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -41,7 +42,7 @@ public class ApiExceptionHandler {
     }
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MissingServletRequestParameterException.class,
-            MethodArgumentTypeMismatchException.class, MissingServletRequestPartException.class})
+            MissingRequestHeaderException.class, MethodArgumentTypeMismatchException.class, MissingServletRequestPartException.class})
     ResponseEntity<ApiError> malformed(Exception e, HttpServletRequest request) {
         for (Throwable cause = e; cause != null; cause = cause.getCause()) {
             if (cause instanceof RequestBodyLimitFilter.BodyLimitExceeded) {
